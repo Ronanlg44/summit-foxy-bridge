@@ -1,3 +1,14 @@
+# Services :
+#   - bridge  : le pont Kinetic <-> Foxy (toujours actif)
+#   - shell   : un terminal Foxy pret a l'emploi
+#   - teleop  : pilotage clavier (envoie /cmd_vel au robot)
+#   - rviz    : visualisation 3D des capteurs et TF
+#   - rqt     : outils graphiques (rqt_graph, rqt_plot, etc.)
+#
+# Pour les services graphiques (rviz, rqt) il faut autoriser
+# l'affichage UNE FOIS par session de bureau :
+#   xhost +local:docker
+
 services:
   bridge:
     build: .
@@ -14,8 +25,6 @@ services:
     restart: "no"
     command: ["dynamic"]
 
-  # Terminal Foxy de test : prompt pret a l'emploi.
-  # Lancement :  docker compose run --rm shell
   shell:
     image: summit-kinetic-foxy-bridge:20.04
     network_mode: host
@@ -26,12 +35,6 @@ services:
     command: ["source /opt/ros/foxy/setup.bash && exec bash"]
     profiles: ["tools"]
 
-  # Teleop clavier : envoie /cmd_vel au topic du robot.
-  # Lancement :  docker compose run --rm teleop
-  # Touches (voir l'ecran qui s'affiche) :
-  #   i = avant     ,/m = arriere     j/l = rotation     k = STOP
-  #   q/z = vitesse max +/-           x/e = lineaire +/- seul
-  # Au demarrage, tape plusieurs fois 'z' pour reduire la vitesse max.
   teleop:
     image: summit-kinetic-foxy-bridge:20.04
     network_mode: host
@@ -43,4 +46,32 @@ services:
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash && ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r /cmd_vel:=/summit_xl/robotnik_base_control/cmd_vel"
+    profiles: ["tools"]
+
+  rviz:
+    image: summit-kinetic-foxy-bridge:20.04
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${DOMAIN_ID}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    entrypoint: ["/bin/bash", "-lc"]
+    command: ["source /opt/ros/foxy/setup.bash && ros2 run rviz2 rviz2"]
+    profiles: ["tools"]
+
+  rqt:
+    image: summit-kinetic-foxy-bridge:20.04
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${DOMAIN_ID}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    entrypoint: ["/bin/bash", "-lc"]
+    command: ["source /opt/ros/foxy/setup.bash && rqt"]
     profiles: ["tools"]
