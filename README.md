@@ -1,10 +1,10 @@
-# Pont ROS 1 Kinetic ↔ ROS 2 Foxy pour Summit XL HL (SXL00-181120AA)
+# Pont ROS 1 Kinetic ↔ ROS 2 Foxy pour la téléopération du Summit XL (SXL00-181120AA)
 
-Pont Docker qui relie le robot **Summit XL HL** (Robotnik, ROS Kinetic figé) à
+Pont Docker qui relie le robot **Summit XL** (Robotnik, ROS Kinetic figé) à
 des nœuds **ROS 2 Foxy** tournant sur le PC. Permet de lire tous les capteurs
 du robot depuis ROS 2 et de lui envoyer des commandes de vitesse.
 
-Ronan Le Guenne : ronan.le-guenne@polytech-lille.net
+Rédigé par Ronan Le Guenne : ronan.le-guenne@polytech-lille.net
 
 ---
 
@@ -16,9 +16,10 @@ Ronan Le Guenne : ronan.le-guenne@polytech-lille.net
 4. [Procédure complète](#procédure-complète-à-chaque-session)
 5. [Topics disponibles](#topics-disponibles)
 6. [Pilotage au clavier (teleop)](#pilotage-au-clavier-teleop)
-7. [Dépannage](#dépannage)
-8. [Historique du diagnostic](#historique-du-diagnostic)
-9. [Évolutions possibles](#évolutions-possibles)
+7. [Outils graphiques (RViz, rqt)](#outils-graphiques-rviz-rqt)
+8. [Dépannage](#dépannage)
+9. [Historique du diagnostic](#historique-du-diagnostic)
+10. [Évolutions possibles](#évolutions-possibles)
 
 ---
 
@@ -56,6 +57,7 @@ ros2 topic echo /summit_xl/robotnik_base_hw/battery  #vérifier que la réceptio
                                 +-----------+-----------+
                                 |  Conteneurs Foxy      |
                                 |  (shell, teleop,      |
+                                |   rviz, rqt,          |
                                 |   noeuds de stage)    |
                                 |  RMW = CycloneDDS     |
                                 +-----------------------+
@@ -68,6 +70,8 @@ ros2 topic echo /summit_xl/robotnik_base_hw/battery  #vérifier que la réceptio
   que lire son `roscore`.
 - Le pont (`summit_foxy`) cohabite Noetic et Foxy dans la même image Ubuntu
   20.04, tous deux en paquets `apt` (aucune compilation source fragile).
+  L'image utilise `ros-foxy-desktop` : RViz, rqt, tf2 complet, ros2 bag…
+  sont inclus.
 - Tous les processus ROS 2 (pont + shells + nœuds) utilisent **CycloneDDS** et
   le **domaine 0**, sinon ils ne se voient pas.
 
@@ -111,6 +115,16 @@ ping -c 2 192.168.0.200              # doit repondre
 ```
 
 Si une des vérifications échoue : règle-la avant d'aller plus loin
+
+**Si tu comptes utiliser RViz, rqt ou tout autre outil graphique** dans un
+conteneur, autorise une fois par session de bureau :
+
+```bash
+xhost +local:docker
+```
+
+Sans ça, les services `rviz` et `rqt` planteront avec `cannot connect to X
+server`. À refaire à chaque redémarrage de session graphique.
 
 ### Étape 2 — Lancement du pont (terminal 1)
 
@@ -241,6 +255,66 @@ faible. Pour une commande douce permanente, voir
 
 ---
 
+## Outils graphiques (RViz, rqt)
+
+Les deux services nécessitent que `xhost +local:docker` ait été lancé une
+fois dans la session (voir [Procédure - Étape 1](#étape-1--préparation)).
+
+### RViz : visualisation 3D
+
+```bash
+cd ~/Pro/Stage_CNRS/ROS/summit_foxy
+docker compose run --rm rviz
+```
+
+Configuration de base utile :
+
+- **Fixed Frame** (en haut à gauche) : passer de `map` à `odom` ou
+  `base_footprint`. Sinon RViz se plaint qu'il ne connaît pas la
+  transformation vers `map`.
+- **Add → By topic → `/summit_xl/front_laser/scan` → LaserScan** : affichage
+  du scan laser autour du robot.
+- **Add → TF** : squelette des frames du robot (axes XYZ visibles).
+- **Add → By topic → `/summit_xl/robotnik_base_control/odom` → Odometry** :
+  trace de la trajectoire.
+
+Pour sauvegarder ta config : `File → Save Config As...` dans un sous-dossier
+du projet (`rviz_configs/` par exemple).
+
+**Limitation connue — RobotModel** : l'affichage du mesh 3D du robot
+(`Add → RobotModel`) ne fonctionne **pas** dans ce montage. Cause : RViz a
+besoin du paramètre `robot_description` (URDF) et des fichiers de mesh, qui
+vivent côté Kinetic. `ros1_bridge` fait passer les **topics** et les
+**services** mais pas le **Parameter Server** ROS 1. Les TF restent visibles
+(squelette des frames), ce qui couvre la grande majorité des besoins de
+visualisation.
+
+**Limitation connue — 2D Goal Pose** : le bouton publie bien un
+`PoseStamped` sur `/goal_pose`, mais aucun planificateur n'écoute ce topic
+dans ce montage. Pour que le robot navigue vers un but, il faut un
+**Nav2** (Foxy) ou utiliser le `move_base` Kinetic du robot via ses
+propres services. Voir [Évolutions possibles](#évolutions-possibles).
+
+### rqt : boîte à outils GUI
+
+```bash
+cd ~/Pro/Stage_CNRS/ROS/summit_foxy
+docker compose run --rm rqt
+```
+
+`rqt` ouvre une fenêtre où tu peux empiler des plugins via le menu **Plugins**.
+Les plus utiles au quotidien :
+
+- **Topics → Topic Monitor** : voir tous les topics et leurs débits en direct.
+- **Visualization → Plot** : tracer en temps réel n'importe quel champ d'un
+  topic (ex: la vitesse linéaire publiée sur `/cmd_vel`).
+- **Introspection → Node Graph** : graphe des nœuds et de leurs connexions.
+- **Configuration → Dynamic Reconfigure** : modifier des paramètres à chaud
+  (compatible ROS 2 si le nœud le supporte).
+- **Logging → Console** : visionner les logs `/rosout` filtrés par niveau.
+
+---
+
 ## Dépannage
 
 ### Le build échoue avec "Could not resolve host"
@@ -282,6 +356,13 @@ Vérifier dans l'ordre :
    que ça bloque.
 3. La **manette PS4 Bluetooth** est-elle active ? Elle peut prendre la
    priorité sur le mux (normalement non). Appuyer sur le bouton PS pour la désactiver.
+
+### RViz ou rqt ne s'ouvre pas (`cannot connect to X server`)
+
+Cause : `xhost +local:docker` n'a pas été fait dans la session courante.
+
+Solution : dans un terminal hôte, lance `xhost +local:docker`, puis relance
+le service. À refaire à chaque redémarrage de session graphique.
 
 ### Conteneurs zombies à nettoyer
 
@@ -367,11 +448,25 @@ L'à-coup au démarrage du teleop vient de l'absence de rampe d'accélération.
 Solution propre : interposer un `nav2_velocity_smoother` ou un nœud custom
 qui s'abonne au `cmd_vel` brut et republie une version rampée.
 
+### Afficher le mesh du robot dans RViz
+
+Cloner `summit_xl_common` (qui contient `summit_xl_description` avec l'URDF
+et les meshes), le monter dans le conteneur Foxy, et lancer un
+`robot_state_publisher` côté Foxy qui charge ce URDF. RViz pourra alors
+afficher `RobotModel`.
+
 ### Ajouter la caméra RealSense
 
 Le wrapper ROS 1 RealSense n'est plus maintenu, le wrapper ROS 2 l'est. Tourner
 le wrapper ROS 2 sur le PC dans un conteneur Foxy : la caméra publie
 directement en Foxy, sans passer par le robot.
+
+### Navigation autonome (Nav2)
+
+Le clic "2D Goal Pose" dans RViz produit bien un message `PoseStamped`, mais
+aucun planificateur ne l'écoute. Pour de la navigation autonome, installer
+Nav2 dans un conteneur Foxy : carte, AMCL pour la localisation, planners
+global et local, et publication sur `/summit_xl/robotnik_base_control/cmd_vel`.
 
 ### Migrer vers Humble plus tard
 
@@ -393,8 +488,8 @@ Summit), ou un PC compagnon directement à bord.
 
 ```
 summit_foxy/
-├── Dockerfile            # Image Noetic + Foxy + ros1_bridge + CycloneDDS + teleop
-├── docker-compose.yml    # Services : bridge, shell, teleop
+├── Dockerfile            # Image Noetic + Foxy desktop + ros1_bridge + CycloneDDS + teleop
+├── docker-compose.yml    # Services : bridge, shell, teleop, rviz, rqt
 ├── entrypoint.sh         # Lancement du pont avec attente TCP du master ROS 1
 ├── env.example           # Variables : ROBOT_IP, MY_IP, DOMAIN_ID
 ├── .env                  # Copie locale de env.example (non versionnée)
