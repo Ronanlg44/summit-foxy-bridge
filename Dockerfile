@@ -1,7 +1,7 @@
 # ============================================================
 #  Pont ROS 1 Kinetic (Summit XL) <-> ROS 2 Foxy (PC)
+#  + perception : RealSense D435i
 #  Ubuntu 20.04 : Noetic + Foxy desktop + ros1_bridge.
-#  Aucune compilation source -> aucun conflit Python.
 # ============================================================
 FROM ros:noetic-ros-base-focal
 
@@ -21,6 +21,13 @@ http://packages.ros.org/ros2/ubuntu focal main" \
         ros-foxy-rmw-cyclonedds-cpp \
         ros-foxy-image-transport-plugins \
         ros-foxy-compressed-image-transport \
+        ros-foxy-realsense2-camera \
+        ros-foxy-realsense2-camera-msgs \
+        ros-foxy-realsense2-description \
+        ros-foxy-apriltag \
+        ros-foxy-cv-bridge \
+        ros-foxy-image-geometry \
+        ros-foxy-vision-msgs \
         ros-noetic-rosbash \
         ros-noetic-tf2-msgs \
         iputils-ping \
