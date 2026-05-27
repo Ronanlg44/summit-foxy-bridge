@@ -4,6 +4,7 @@
 #   - teleop  : pilotage clavier (envoie /cmd_vel au robot)
 #   - rviz    : visualisation 3D des capteurs et TF
 #   - rqt     : outils graphiques (rqt_graph, rqt_plot, etc.)
+#   - realsense : driver D435i (RGB + depth aligne + nuage de points)
 #
 # Pour les services graphiques (rviz, rqt) il faut autoriser
 # l'affichage UNE FOIS par session de bureau :
@@ -58,6 +59,7 @@ services:
       - QT_X11_NO_MITSHM=1
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./rviz_configs:/rviz_configs:rw
     entrypoint: ["/bin/bash", "-lc"]
     command: ["source /opt/ros/foxy/setup.bash && ros2 run rviz2 rviz2"]
     profiles: ["tools"]
@@ -74,4 +76,17 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
     entrypoint: ["/bin/bash", "-lc"]
     command: ["source /opt/ros/foxy/setup.bash && rqt"]
+    profiles: ["tools"]
+  realsense:
+    image: summit-kinetic-foxy-bridge:20.04
+    network_mode: host
+    privileged: true
+    environment:
+      - ROS_DOMAIN_ID=${DOMAIN_ID}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    volumes:
+      - /dev:/dev
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - "source /opt/ros/foxy/setup.bash && ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true pointcloud.enable:=true depth_module.profile:=640x480x30 rgb_camera.profile:=640x480x30"
     profiles: ["tools"]
