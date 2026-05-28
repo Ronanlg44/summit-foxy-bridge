@@ -5,6 +5,7 @@
 #   - rviz    : visualisation 3D des capteurs et TF
 #   - rqt     : outils graphiques (rqt_graph, rqt_plot, etc.)
 #   - realsense : driver D435i (RGB + depth aligne + nuage de points)
+#   - apriltag  : detecteur AprilTag36h11 sur le flux /camera/color
 #
 # Pour les services graphiques (rviz, rqt) il faut autoriser
 # l'affichage UNE FOIS par session de bureau :
@@ -33,7 +34,7 @@ services:
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
     entrypoint: ["/bin/bash", "-lc"]
-    command: ["source /opt/ros/foxy/setup.bash && exec bash"]
+    command: ["source /opt/ros/foxy/setup.bash && { [ -f /opt/apriltag_ws/install/setup.bash ] && source /opt/apriltag_ws/install/setup.bash; }; exec bash"]
     profiles: ["tools"]
 
   teleop:
@@ -88,5 +89,16 @@ services:
       - /dev:/dev
     entrypoint: ["/bin/bash", "-lc"]
     command:
-      - "source /opt/ros/foxy/setup.bash && ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true pointcloud.enable:=true depth_module.profile:=640x480x30 rgb_camera.profile:=640x480x30"
+      - "source /opt/ros/foxy/setup.bash && ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true pointcloud.enable:=false initial_reset:=true depth_module.profile:=640x480x30 rgb_camera.profile:=640x480x30"
+    profiles: ["tools"]
+   
+  apriltag:
+    image: summit-kinetic-foxy-bridge:20.04
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${DOMAIN_ID}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - "source /opt/ros/foxy/setup.bash && source /opt/apriltag_ws/install/setup.bash && ros2 launch apriltag_ros tag_realsense.launch.py camera_name:=/camera/color image_topic:=image_raw"
     profiles: ["tools"]

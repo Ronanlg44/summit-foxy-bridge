@@ -2,7 +2,9 @@
 
 Pont Docker qui relie le robot **Summit XL** (Robotnik, ROS Kinetic figé) à
 des nœuds **ROS 2 Foxy** tournant sur le PC. Permet de lire tous les capteurs
-du robot depuis ROS 2 et de lui envoyer des commandes de vitesse.
+du robot depuis ROS 2 et de lui envoyer des commandes de vitesse. Une couche
+**vision** (RealSense D435i + AprilTag) tourne en parallèle pour les
+futurs paliers de tracking visuel.
 
 Rédigé par Ronan Le Guenne : ronan.le-guenne@polytech-lille.net
 
@@ -17,9 +19,10 @@ Rédigé par Ronan Le Guenne : ronan.le-guenne@polytech-lille.net
 5. [Topics disponibles](#topics-disponibles)
 6. [Pilotage au clavier (teleop)](#pilotage-au-clavier-teleop)
 7. [Outils graphiques (RViz, rqt)](#outils-graphiques-rviz-rqt)
-8. [Dépannage](#dépannage)
-9. [Historique du diagnostic](#historique-du-diagnostic)
-10. [Évolutions possibles](#évolutions-possibles)
+8. [vision (RealSense + AprilTag)](#vision-realsense--apriltag)
+9. [Dépannage](#dépannage)
+10. [Historique du diagnostic](#historique-du-diagnostic)
+11. [Évolutions possibles](#évolutions-possibles)
 
 ---
 
@@ -58,6 +61,7 @@ ros2 topic echo /summit_xl/robotnik_base_hw/battery  #vérifier que la réceptio
                                 |  Conteneurs Foxy      |
                                 |  (shell, teleop,      |
                                 |   rviz, rqt,          |
+                                |   realsense, apriltag,|
                                 |   noeuds de stage)    |
                                 |  RMW = CycloneDDS     |
                                 +-----------------------+
@@ -198,6 +202,9 @@ non exhaustive) :
 
 Liste complète : `ros2 topic list` dans un shell.
 
+Les topics produits par la couche **vision** (RealSense + AprilTag)
+sont documentés séparément dans [`vision/README.md`](vision/README.md).
+
 **Note sur le débit** : côté Kinetic l'IMU publie à 50 Hz, mais CycloneDDS via
 ce WiFi délivre (à première vue) autour de 4 Hz côté Foxy. Suffisant pour le pilotage et la
 plupart des usages, à garder à l'esprit pour des applications temps réel.
@@ -267,19 +274,18 @@ cd ~/Pro/Stage_CNRS/ROS/summit_foxy
 docker compose run --rm rviz
 ```
 
-Configuration de base utile :
+Configurations RViz prêtes à l'emploi dans `rviz_configs/` (chargeables via
+**File → Open Config**) :
 
-- **Fixed Frame** (en haut à gauche) : passer de `map` à `odom` ou
-  `base_footprint`. Sinon RViz se plaint qu'il ne connaît pas la
-  transformation vers `map`.
-- **Add → By topic → `/summit_xl/front_laser/scan` → LaserScan** : affichage
-  du scan laser autour du robot.
-- **Add → TF** : squelette des frames du robot (axes XYZ visibles).
-- **Add → By topic → `/summit_xl/robotnik_base_control/odom` → Odometry** :
-  trace de la trajectoire.
+- `realsense_d435i.rviz` : flux caméra D435i (RGB, depth, nuage de points)
+- `apriltag_d435i.rviz` : flux caméra + TF des tags détectés
 
-Pour sauvegarder ta config : `File → Save Config As...` dans un sous-dossier
-du projet (`rviz_configs/` par exemple).
+Pour visualiser les capteurs du Summit XL via le pont, configuration manuelle :
+
+- **Fixed Frame** : passer de `map` à `odom` ou `base_footprint`
+- **Add → By topic → `/summit_xl/front_laser/scan` → LaserScan**
+- **Add → TF** : squelette des frames du robot
+- **Add → By topic → `/summit_xl/robotnik_base_control/odom` → Odometry**
 
 **Limitation connue — RobotModel** : l'affichage du mesh 3D du robot
 (`Add → RobotModel`) ne fonctionne **pas** dans ce montage. Cause : RViz a
@@ -312,6 +318,27 @@ Les plus utiles au quotidien :
 - **Configuration → Dynamic Reconfigure** : modifier des paramètres à chaud
   (compatible ROS 2 si le nœud le supporte).
 - **Logging → Console** : visionner les logs `/rosout` filtrés par niveau.
+
+---
+
+## vision (RealSense + AprilTag)
+
+Le projet inclut une **couche vision** indépendante du pont : driver
+Intel RealSense D435i et détecteur AprilTag, tous deux en ROS 2 Foxy. La
+caméra est en USB direct sur le PC, donc latence minimale et pleine cadence
+(30 Hz RGB + depth).
+
+**Services Docker dédiés** :
+
+```bash
+docker compose run --rm realsense    # driver D435i (RGB + depth + IMU)
+docker compose run --rm apriltag     # detecteur AprilTag36h11
+```
+
+**Documentation complète** : [`vision/README.md`](vision/README.md)
+— topics publiés, paramètres, dépannage, choix techniques et évolutions
+prévues (raffinement de pose avec depth, détection IR pour vision dans
+le noir, calibration extrinsèque, asservissement visuel).
 
 ---
 
@@ -363,6 +390,11 @@ Cause : `xhost +local:docker` n'a pas été fait dans la session courante.
 
 Solution : dans un terminal hôte, lance `xhost +local:docker`, puis relance
 le service. À refaire à chaque redémarrage de session graphique.
+
+### Souci spécifique à la caméra ou aux AprilTag
+
+Voir la section dépannage dédiée dans
+[`vision/README.md`](vision/README.md#dépannage).
 
 ### Conteneurs zombies à nettoyer
 
@@ -455,12 +487,6 @@ et les meshes), le monter dans le conteneur Foxy, et lancer un
 `robot_state_publisher` côté Foxy qui charge ce URDF. RViz pourra alors
 afficher `RobotModel`.
 
-### Ajouter la caméra RealSense
-
-Le wrapper ROS 1 RealSense n'est plus maintenu, le wrapper ROS 2 l'est. Tourner
-le wrapper ROS 2 sur le PC dans un conteneur Foxy : la caméra publie
-directement en Foxy, sans passer par le robot.
-
 ### Navigation autonome (Nav2)
 
 Le clic "2D Goal Pose" dans RViz produit bien un message `PoseStamped`, mais
@@ -482,18 +508,29 @@ les flux haute fréquence). Pour des applications temps réel, prévoir un lien
 Ethernet entre le PC et le routeur du robot (port WAN du panneau arrière du
 Summit), ou un PC compagnon directement à bord.
 
+### Évolutions de la couche vision
+
+Voir la section dédiée dans [`vision/README.md`](vision/README.md#évolutions-prévues) :
+raffinement de pose avec depth, détection IR, calibration extrinsèque,
+asservissement visuel PID, et couche sécurité par fusion LiDAR.
+
 ---
 
 ## Fichiers du projet
 
 ```
 summit_foxy/
-├── Dockerfile            # Image Noetic + Foxy desktop + ros1_bridge + CycloneDDS + teleop
-├── docker-compose.yml    # Services : bridge, shell, teleop, rviz, rqt
+├── Dockerfile            # Image Noetic + Foxy desktop + ros1_bridge + CycloneDDS + vision
+├── docker-compose.yml    # Services : bridge, shell, teleop, rviz, rqt, realsense, apriltag
 ├── entrypoint.sh         # Lancement du pont avec attente TCP du master ROS 1
 ├── env.example           # Variables : ROBOT_IP, MY_IP, DOMAIN_ID
 ├── .env                  # Copie locale de env.example (non versionnée)
-└── README.md             # Ce fichier
+├── README.md             # Ce fichier
+├── vision/
+│   └── README.md         # Doc dédiée RealSense + AprilTag
+└── rviz_configs/
+    ├── realsense_d435i.rviz
+    └── apriltag_d435i.rviz
 ```
 
 ---
@@ -503,4 +540,5 @@ summit_foxy/
 Diagnostic et mise au point : Ronan Le Guenne, mai 2026.
 
 Pont basé sur `ros1_bridge` (Open Source Robotics Foundation), CycloneDDS
-(Eclipse), et `teleop_twist_keyboard` (ROS community).
+(Eclipse), `teleop_twist_keyboard` (ROS community), `realsense2_camera`
+(Intel), et `apriltag` + `apriltag_ros` (AprilRobotics + Adlink-ROS).

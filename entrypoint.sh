@@ -15,6 +15,8 @@ export ROS_MASTER_URI ROS_DOMAIN_ID
 if [ "${1:-dynamic}" = "shell" ]; then
   echo "[pont] Mode shell (debug). ROS_MASTER_URI=$ROS_MASTER_URI ROS_IP=${ROS_IP:-auto}"
   source /opt/ros/noetic/setup.bash
+  source /opt/ros/foxy/setup.bash
+  [ -f /opt/apriltag_ws/install/setup.bash ] && source /opt/apriltag_ws/install/setup.bash
   exec bash
 fi
 
@@ -33,6 +35,7 @@ echo "[pont] Master ROS 1 joignable. Demarrage du pont Kinetic <-> Foxy."
 
 source /opt/ros/noetic/setup.bash
 source /opt/ros/foxy/setup.bash
+[ -f /opt/apriltag_ws/install/setup.bash ] && source /opt/apriltag_ws/install/setup.bash
 
 case "${1:-dynamic}" in
   dynamic)

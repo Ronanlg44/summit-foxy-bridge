@@ -37,6 +37,26 @@ http://packages.ros.org/ros2/ubuntu focal main" \
         vim \
         less \
  && rm -rf /var/lib/apt/lists/*
+ 
+# ------------------------------------------------------------
+# Outils de build (colcon + git) pour construire apriltag_ros
+# ------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3-colcon-common-extensions \
+        git \
+ && rm -rf /var/lib/apt/lists/*
+
+# ------------------------------------------------------------
+# Build d'apriltag (lib C AprilRobotics) + apriltag_ros (wrapper
+# ROS2 Foxy, fork Adlink avec launcher RealSense pret a l'emploi)
+# ------------------------------------------------------------
+RUN mkdir -p /opt/apriltag_ws/src \
+ && cd /opt/apriltag_ws/src \
+ && git clone https://github.com/AprilRobotics/apriltag.git \
+ && git clone https://github.com/Adlink-ROS/apriltag_ros.git -b foxy-devel \
+ && cd /opt/apriltag_ws \
+ && /bin/bash -c "source /opt/ros/foxy/setup.bash && colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release" \
+ && rm -rf build log
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
