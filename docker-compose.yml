@@ -6,6 +6,7 @@
 #   - rqt     : outils graphiques (rqt_graph, rqt_plot, etc.)
 #   - realsense : driver D435i (RGB + depth aligne + nuage de points)
 #   - apriltag  : detecteur AprilTag36h11 sur le flux /camera/color
+#   - refiner   : raffine la pose AprilTag avec la depth D435i
 #
 # Pour les services graphiques (rviz, rqt) il faut autoriser
 # l'affichage UNE FOIS par session de bureau :
@@ -101,4 +102,17 @@ services:
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash && source /opt/apriltag_ws/install/setup.bash && ros2 launch apriltag_ros tag_realsense.launch.py camera_name:=/camera/color image_topic:=image_raw"
+    profiles: ["tools"]
+    
+  refiner:
+    image: summit-kinetic-foxy-bridge:20.04
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${DOMAIN_ID}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    volumes:
+      - ./vision/refiner:/opt/refiner_ws/src/apriltag_refiner:rw
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - "source /opt/ros/foxy/setup.bash && source /opt/apriltag_ws/install/setup.bash && cd /opt/refiner_ws && colcon build --packages-select apriltag_refiner --symlink-install && source /opt/refiner_ws/install/setup.bash && ros2 run apriltag_refiner refiner"
     profiles: ["tools"]
