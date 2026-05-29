@@ -521,6 +521,58 @@ dans `/opt/apriltag_ws/src/apriltag_ros/`.
 
 ---
 
+### Détection en infrarouge
+
+**Statut** : services `realsense_ir` et `apriltag_ir` ajoutés au compose.
+
+Pour du tracking en faible luminosité ou en présence de lumières
+aveuglantes (LEDs intenses, projecteurs visibles), les caméras IR de
+la D435i sont plus robustes que le RGB : l'émetteur IR actif éclaire
+la scène en proche infrarouge (~850 nm), filtré naturellement par les
+sources visibles.
+
+**Architecture** : un mode = un service realsense + un service apriltag,
+mais le refiner est partagé (consomme `/apriltag_detections` peu importe
+le mode source).
+
+| Mode jour            | Mode nuit / aveuglement |
+|----------------------|--------------------------|
+| `realsense`          | `realsense_ir`          |
+| `apriltag`           | `apriltag_ir`           |
+| `refiner`            | `refiner`               |
+| Config RViz : `apriltag_d435i.rviz` | Config RViz : `apriltag_ir_d435i.rviz` |
+
+**Démarrage en mode IR** :
+
+```bash
+# Terminal 1
+docker compose run --rm realsense_ir
+
+# Terminal 2
+docker compose run --rm apriltag_ir
+
+# Terminal 3 (identique au mode jour)
+docker compose run --rm refiner
+```
+
+**Note** : ne pas lancer `realsense` et `realsense_ir` simultanément
+(une seule connexion USB possible avec la cam).
+
+**Paramètre clé** : `depth_module.emitter_enabled:=2` active le mode
+alternance du projecteur IR — une frame sur deux ON (pour la depth),
+une frame sur deux OFF (pour la détection IR sans pollution par la
+mire). Malgré ce mode, la détection apriltag reste à 30 Hz constant
+(le détecteur tolère bien les variations de la mire).
+
+**Compatibilité refiner** : le refiner souscrit à
+`/apriltag_detections` qui est le **même topic** dans les deux modes.
+Les deux frames optiques `camera_color_optical_frame` et
+`camera_infra1_optical_frame` étant physiquement proches (quelques mm),
+le décalage est négligeable pour notre échelle de détection.
+Pas d'adaptation nécessaire dans le refiner.
+
+
+
 ## Dépannage
 
 **Prévention** : toujours **un seul Ctrl-C** dans le terminal du driver.
@@ -588,20 +640,8 @@ Rauch envisagée plus tard pour bénéficier du message complet
 
 ---
 
-## Évolutions prévues
+## Évolutions possibles
 
-### Détection en infrarouge (vision dans le noir / lumières aveuglantes)
-
-Le palier actuel utilise le flux RGB. Pour du tracking en faible luminosité
-ou en présence de lumières aveuglantes (LEDs intenses, projecteurs visibles),
-basculer sur les caméras IR est plus robuste : l'émetteur IR actif de la
-D435i éclaire la scène en proche infrarouge (~850 nm), filtré naturellement
-par les sources visibles.
-
-Service `apriltag_ir` à créer, qui souscrit à `/camera/infra1/image_rect_raw`
-et `/camera/infra1/camera_info`. Penser à désactiver le projecteur de points
-alternativement (`depth_module.emitter_enabled:=2`) pour qu'il ne pollue
-pas la lecture des tags toutes les deux frames.
 
 ### Migration vers christianrauch/apriltag_ros
 

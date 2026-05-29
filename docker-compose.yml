@@ -5,7 +5,9 @@
 #   - rviz    : visualisation 3D des capteurs et TF
 #   - rqt     : outils graphiques (rqt_graph, rqt_plot, etc.)
 #   - realsense : driver D435i (RGB + depth aligne + nuage de points)
+#   - realsense_ir : driver D435i en mode IR (depth + infra1/2 + projecteur alterne)
 #   - apriltag  : detecteur AprilTag36h11 sur le flux /camera/color
+#   - apriltag_ir  : detecteur AprilTag sur le flux IR (pour scenario nuit/aveuglement)
 #   - refiner   : raffine la pose AprilTag avec la depth D435i
 #
 # Pour les services graphiques (rviz, rqt) il faut autoriser
@@ -79,6 +81,7 @@ services:
     entrypoint: ["/bin/bash", "-lc"]
     command: ["source /opt/ros/foxy/setup.bash && rqt"]
     profiles: ["tools"]
+    
   realsense:
     image: summit-kinetic-foxy-bridge:20.04
     network_mode: host
@@ -92,6 +95,20 @@ services:
     command:
       - "source /opt/ros/foxy/setup.bash && ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true pointcloud.enable:=false initial_reset:=true depth_module.profile:=640x480x30 rgb_camera.profile:=640x480x30"
     profiles: ["tools"]
+    
+  realsense_ir:
+    image: summit-kinetic-foxy-bridge:20.04
+    network_mode: host
+    privileged: true
+    environment:
+      - ROS_DOMAIN_ID=${DOMAIN_ID}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    volumes:
+      - /dev:/dev
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - "source /opt/ros/foxy/setup.bash && ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true pointcloud.enable:=false depth_module.profile:=640x480x30 rgb_camera.profile:=640x480x30 initial_reset:=true enable_infra1:=true enable_infra2:=true depth_module.emitter_enabled:=2"
+    profiles: ["tools"]
    
   apriltag:
     image: summit-kinetic-foxy-bridge:20.04
@@ -102,6 +119,17 @@ services:
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash && source /opt/apriltag_ws/install/setup.bash && ros2 launch apriltag_ros tag_realsense.launch.py camera_name:=/camera/color image_topic:=image_raw"
+    profiles: ["tools"]
+    
+  apriltag_ir:
+    image: summit-kinetic-foxy-bridge:20.04
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${DOMAIN_ID}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - "source /opt/ros/foxy/setup.bash && source /opt/apriltag_ws/install/setup.bash && ros2 launch apriltag_ros tag_realsense.launch.py camera_name:=/camera/infra1 image_topic:=image_rect_raw"
     profiles: ["tools"]
     
   refiner:
