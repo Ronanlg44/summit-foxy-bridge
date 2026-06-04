@@ -18,9 +18,10 @@ Rédigé par Ronan Le Guenne : ronan.le-guenne@polytech-lille.net
 3. [Démarrage](#démarrage)
 4. [Visualisation RViz](#visualisation-rviz)
 5. [Test de détection AprilTag](#test-de-détection-april-tag)
-6. [Palier 3 — Raffinement de pose avec la profondeur](#palier-3--raffinement-de-pose-avec-la-profondeur)
+6. [Raffinement de pose avec la profondeur](#palier-3--raffinement-de-pose-avec-la-profondeur)
 7. [Compatibilité matérielle](#compatibilité-matérielle)
 8. [Architecture interne](#architecture-interne)
+9. [Calibration extrinsèque et pose du Spot](#calibration-extrinsèque-et-pose-du-spot)
 9. [Dépannage](#dépannage)
 10. [Choix techniques](#choix-techniques)
 11. [Évolutions prévues](#évolutions-prévues)
@@ -570,6 +571,96 @@ Les deux frames optiques `camera_color_optical_frame` et
 `camera_infra1_optical_frame` étant physiquement proches (quelques mm),
 le décalage est négligeable pour notre échelle de détection.
 Pas d'adaptation nécessaire dans le refiner.
+
+
+## Calibration extrinsèque et pose du Spot
+
+Calculer en temps réel la pose du Spot dans le repère du Summit, par
+chaînage TF, à partir d'un ou plusieurs tags détectés.
+
+### Architecture
+
+```
+realsense → apriltag → refiner → pose_fuser → /spot_pose_in_summit
+                          ↑              ↑
+                      tf_static (calibration extrinsèque)
+```
+
+- **tf_static** publie 4 transformations statiques :
+  - `summit_xl_base_link → camera_link` (D435i sur le Summit, mesure CAO)
+  - `spot_base_link → tag_X_link` pour X ∈ {0, 1, 2} (tags sur le Spot)
+- **pose_fuser** lit `/apriltag_detections_refined`, compose `T_cam_spot = T_cam_tag · T_tag_spot` via scipy, et publie la pose finale sur `/spot_pose_in_summit` + une TF `summit_xl_base_link → spot_base_link`.
+
+### Calibration D435i sur le Summit
+
+Mesurée dans la CAO OnShape (modèle "RB Summit XL HL") et validée au mètre :
+
+| Paramètre | Valeur     |
+|-----------|-----------:|
+| x         | 0.206 m    |
+| y         | 0.000 m    |
+| z         | 0.136 m    |
+| pitch     | 22.84° (0.3986 rad) |
+
+La cam est fixée sur la face avant inclinée du Summit, centrée latéralement.
+
+### Calibration des 3 tags sur le Spot
+
+| Tag | Position (x, y, z) m | Rotation (yaw, pitch, roll) | Frame parent  |
+|-----|----------------------|------------------------------|---------------|
+| 0   | (-0.43, 0, 0.01)     | (π, 0, 0)                   | arrière       |
+| 1   | (0, 0.12, 0.01)      | (π/2, 0, 0)                 | flanc gauche  |
+| 2   | (0, -0.12, 0.01)     | (-π/2, 0, 0)                | flanc droit   |
+
+Les rotations ont été déterminées expérimentalement après mesure de la convention de repère utilisée par le wrapper Adlink (qui aligne l'axe +X du tag avec sa normale, et non +Z comme la convention native AprilTag).
+
+### Fusion multi-tags
+
+Si plusieurs tags sont visibles, le `pose_fuser` :
+
+- moyenne pondérée des positions par **1/Z²** (le tag le plus proche pèse plus)
+- conserve l'orientation du tag le plus proche
+
+Au log :
+```
+[INFO] Detections: [1, 0, 2] | Fusionne 3 estimations
+```
+
+### Démarrage
+
+Après `realsense`, `apriltag` et `refiner`:
+
+```bash
+# Terminal 4 — TF statiques de calibration
+docker compose run --rm tf_static
+
+# Terminal 5 — fusion + publication pose Spot
+docker compose run --rm pose_fuser
+```
+
+Vérification rapide :
+
+```bash
+ros2 run tf2_ros tf2_echo summit_xl_base_link spot_base_link
+```
+
+Avec un tag visible droit face à la cam, la rotation doit être proche de l'identité (`qw ≈ 1`).
+
+### Configuration AprilTag (détection multi-IDs)
+
+Le yaml `vision/apriltag/tags_36h11_filter.yaml` est monté en volume dans le service `apriltag`, ce qui permet de modifier les IDs détectés sans rebuild de l'image. Pour le tracking Spot :
+
+```yaml
+tag_ids: [0, 1, 2]
+tag_frames: [dock_frame_0, dock_frame_1, dock_frame_2]
+tag_sizes: [0.10, 0.09, 0.09]
+```
+
+### Pièges et résolutions
+
+- **Conflit de double-parent sur `tag_X_link`** : le refiner publiait `camera_color_optical_frame → tag_X_link`, en conflit avec la TF statique `spot_base_link → tag_X_link`. Résolution : le refiner ne publie plus que sur le topic `/apriltag_detections_refined` ; la composition de transformation est faite par le `pose_fuser`.
+- **Composition de quaternions sans librairie** : ajout de `python3-scipy` dans le Dockerfile, utilisation de `scipy.spatial.transform.Rotation`.
+- **Convention de repère du tag détecté inattendue** : Adlink applique une convention "ROS-style" (axe +X = normale), différente de la convention AprilTag native (axe +Z = normale). Mesurée expérimentalement dans RViz, intégrée dans le calcul des rotations statiques des tags.
 
 
 

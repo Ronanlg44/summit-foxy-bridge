@@ -9,6 +9,7 @@
 #   - apriltag  : detecteur AprilTag36h11 sur le flux /camera/color
 #   - apriltag_ir  : detecteur AprilTag sur le flux IR (pour scenario nuit/aveuglement)
 #   - refiner   : raffine la pose AprilTag avec la depth D435i
+#   - tf_static  : publie les TF statiques (calibration camera + tags)
 #
 # Pour les services graphiques (rviz, rqt) il faut autoriser
 # l'affichage UNE FOIS par session de bureau :
@@ -116,6 +117,8 @@ services:
     environment:
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    volumes:
+    - ./vision/apriltag/tags_36h11_filter.yaml:/opt/apriltag_ws/install/apriltag_ros/share/apriltag_ros/cfg/tags_36h11_filter.yaml:ro
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash && source /opt/apriltag_ws/install/setup.bash && ros2 launch apriltag_ros tag_realsense.launch.py camera_name:=/camera/color image_topic:=image_raw"
@@ -127,6 +130,8 @@ services:
     environment:
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    volumes:
+    - ./vision/apriltag/tags_36h11_filter.yaml:/opt/apriltag_ws/install/apriltag_ros/share/apriltag_ros/cfg/tags_36h11_filter.yaml:ro
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash && source /opt/apriltag_ws/install/setup.bash && ros2 launch apriltag_ros tag_realsense.launch.py camera_name:=/camera/infra1 image_topic:=image_rect_raw"
@@ -143,4 +148,32 @@ services:
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash && source /opt/apriltag_ws/install/setup.bash && cd /opt/refiner_ws && colcon build --packages-select apriltag_refiner --symlink-install && source /opt/refiner_ws/install/setup.bash && ros2 run apriltag_refiner refiner"
+    profiles: ["tools"]
+    
+    
+  pose_fuser:
+    image: summit-kinetic-foxy-bridge:20.04
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${DOMAIN_ID}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    volumes:
+      - ./vision/refiner:/opt/refiner_ws/src/apriltag_refiner:rw
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - "source /opt/ros/foxy/setup.bash && source /opt/apriltag_ws/install/setup.bash && cd /opt/refiner_ws && colcon build --packages-select apriltag_refiner --symlink-install && source /opt/refiner_ws/install/setup.bash && ros2 run apriltag_refiner pose_fuser"
+    profiles: ["tools"]
+    
+    
+  tf_static:
+    image: summit-kinetic-foxy-bridge:20.04
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${DOMAIN_ID}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    volumes:
+      - ./vision/calibration:/etc/calibration:ro
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - "source /opt/ros/foxy/setup.bash && mkdir -p /root/.ros/log && ros2 launch /etc/calibration/tf_static_launch.py"
     profiles: ["tools"]

@@ -20,6 +20,7 @@ setup(
     entry_points={
         'console_scripts': [
             'refiner = apriltag_refiner.refiner_node:main',
+            'pose_fuser = apriltag_refiner.pose_fuser_node:main',
         ],
     },
 )

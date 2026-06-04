@@ -6,6 +6,8 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
+        - /TF1
+        - /TF1/Frames1
       Splitter Ratio: 0.5
     Tree Height: 365
   - Class: rviz_common/Selection
@@ -107,39 +109,47 @@ Visualization Manager:
       Enabled: true
       Frame Timeout: 15
       Frames:
-        All Enabled: true
+        All Enabled: false
         camera_color_frame:
-          Value: true
+          Value: false
         camera_color_optical_frame:
-          Value: true
+          Value: false
         camera_depth_frame:
-          Value: true
+          Value: false
         camera_depth_optical_frame:
-          Value: true
+          Value: false
         camera_link:
           Value: true
-        dock_frame:
+        spot_base_link:
           Value: true
-      Marker Scale: 1
+        summit_xl_base_link:
+          Value: true
+        tag_0_link:
+          Value: true
+        tag_1_link:
+          Value: true
+        tag_2_link:
+          Value: true
+      Marker Scale: 0.4000000059604645
       Name: TF
       Show Arrows: true
       Show Axes: true
       Show Names: false
       Tree:
-        camera_link:
-          camera_color_frame:
-            camera_color_optical_frame:
-              dock_frame:
+        summit_xl_base_link:
+          camera_link:
+            camera_color_frame:
+              camera_color_optical_frame:
                 {}
-          camera_depth_frame:
-            camera_depth_optical_frame:
-              {}
+            camera_depth_frame:
+              camera_depth_optical_frame:
+                {}
       Update Interval: 0
       Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: camera_color_optical_frame
+    Fixed Frame: summit_xl_base_link
     Frame Rate: 30
   Name: root
   Tools:
@@ -179,25 +189,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.9002768993377686
+      Distance: 1.7166357040405273
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.44609490036964417
-        Y: -0.048153720796108246
-        Z: 0.20437218248844147
+        X: -0.21473285555839539
+        Y: 0.1098916232585907
+        Z: 0.15922725200653076
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.4403981566429138
+      Pitch: 0.5753981471061707
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 2.7203989028930664
+      Yaw: 2.065398931503296
     Saved: ~
 Window Geometry:
   Displays:

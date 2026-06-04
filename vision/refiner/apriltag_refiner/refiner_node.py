@@ -17,17 +17,16 @@ Ce noeud :
    (a partir des intrinseques camera_info et de la depth lue).
 5. Garde l'orientation issue de PnP (fiable) mais remplace la position.
 6. Republie sur /apriltag_detections_refined et envoie une TF
-   "<frame>_refined" visualisable dans RViz a cote de l'originale.
+   "<frame>_link" visualisable dans RViz a cote de l'originale.
+   Nom suivant la convention TF du tf_static (calibration extrinseque)
 """
 
 import numpy as np
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import TransformStamped
 from apriltag_msgs.msg import AprilTagDetectionArray
 from cv_bridge import CvBridge
-from tf2_ros import TransformBroadcaster
 
 DETECTIONS_TOPIC = '/apriltag_detections'
 DEPTH_TOPIC = '/camera/aligned_depth_to_color/image_raw'
@@ -63,7 +62,6 @@ class ApriltagRefinerNode(Node):
 
         self.pub_refined = self.create_publisher(
             AprilTagDetectionArray, REFINED_TOPIC, 10)
-        self.tf_broadcaster = TransformBroadcaster(self)
 
         self.get_logger().info(
             f"Refiner pret. Souscrit a {DETECTIONS_TOPIC}, {DEPTH_TOPIC}, "
@@ -132,9 +130,6 @@ class ApriltagRefinerNode(Node):
 
             refined_msg.detections.append(new_det)
 
-            # TF
-            self.broadcast_tf(msg.header, det.id, new_det.pose.pose.pose)
-
         self.pub_refined.publish(refined_msg)
 
     def read_depth_at(self, u: int, v: int):
@@ -156,18 +151,6 @@ class ApriltagRefinerNode(Node):
 
         z_mm = float(np.median(patch[valid]))
         return z_mm / 1000.0
-
-    def broadcast_tf(self, header, tag_id, pose):
-        t = TransformStamped()
-        t.header.stamp = header.stamp
-        t.header.frame_id = header.frame_id
-        # Nom suffixe "_refined" pour distinguer du frame original
-        t.child_frame_id = f"tag_{tag_id}_refined"
-        t.transform.translation.x = pose.position.x
-        t.transform.translation.y = pose.position.y
-        t.transform.translation.z = pose.position.z
-        t.transform.rotation = pose.orientation
-        self.tf_broadcaster.sendTransform(t)
 
 
 def main():

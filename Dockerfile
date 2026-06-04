@@ -43,6 +43,7 @@ http://packages.ros.org/ros2/ubuntu focal main" \
 # ------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-colcon-common-extensions \
+        python3-scipy \
         git \
  && rm -rf /var/lib/apt/lists/*
 

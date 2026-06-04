@@ -1,0 +1,13 @@
+image_transport: 'raw'
+family: '36h11'
+size: 0.08
+threads: 4
+max_hamming: 0
+z_up: true
+decimate: 0.0
+blur: 1.0
+refine-edges: 1
+debug: 0
+tag_ids: [0, 1, 2]
+tag_frames: [dock_frame_0, dock_frame_1, dock_frame_2]
+tag_sizes: [0.08, 0.08,0.08]
