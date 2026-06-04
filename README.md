@@ -1,10 +1,9 @@
-# Pont ROS 1 Kinetic ↔ ROS 2 Foxy pour la téléopération du Summit XL (SXL00-181120AA)
+# Pont ROS 1 Kinetic ↔ ROS 2 Foxy pour la téléopération du Summit XL avec vision embarquée
 
 Pont Docker qui relie le robot **Summit XL** (Robotnik, ROS Kinetic figé) à
 des nœuds **ROS 2 Foxy** tournant sur le PC. Permet de lire tous les capteurs
 du robot depuis ROS 2 et de lui envoyer des commandes de vitesse. Une couche
-**vision** (RealSense D435i + AprilTag) tourne en parallèle pour les
-futurs paliers de tracking visuel.
+**vision** (RealSense D435i + AprilTag) tourne en parallèle pour le tracking visuel et la formulation de commandes de vitesses (\cmd_vel).
 
 Rédigé par Ronan Le Guenne : ronan.le-guenne@polytech-lille.net
 
