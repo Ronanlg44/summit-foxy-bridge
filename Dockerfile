@@ -44,7 +44,11 @@ http://packages.ros.org/ros2/ubuntu focal main" \
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-colcon-common-extensions \
         python3-scipy \
+        python3-opencv \
+        python3-pip \
         git \
+ && pip3 install --no-cache-dir onnxruntime==1.16.3 \
+ && pip3 install --no-cache-dir onnxruntime==1.16.3 supervision \
  && rm -rf /var/lib/apt/lists/*
 
 # ------------------------------------------------------------

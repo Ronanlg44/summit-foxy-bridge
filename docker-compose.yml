@@ -17,19 +17,18 @@
 
 services:
   bridge:
-    build: .
     image: summit-kinetic-foxy-bridge:20.04
-    container_name: summit_foxy
     network_mode: host
     environment:
-      - ROS_MASTER_URI=http://${ROBOT_IP}:11311
-      - ROS_IP=${MY_IP}
+      - ROS_MASTER_URI=http://192.168.0.200:11311
+      - ROS_IP=192.168.0.219
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-    extra_hosts:
-      - "SXL00-181120AA:${ROBOT_IP}"
-    restart: "no"
-    command: ["dynamic"]
+    volumes:
+      - ./entrypoint.sh:/entrypoint.sh:ro  
+      - ./bridge/topics.yaml:/opt/bridge_config/topics.yaml:ro
+    command: ["parameter"]
+    profiles: ["tools"]
 
   shell:
     image: summit-kinetic-foxy-bridge:20.04
@@ -94,7 +93,14 @@ services:
       - /dev:/dev
     entrypoint: ["/bin/bash", "-lc"]
     command:
-      - "source /opt/ros/foxy/setup.bash && ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true pointcloud.enable:=false initial_reset:=true depth_module.profile:=640x480x30 rgb_camera.profile:=640x480x30"
+      - "source /opt/ros/foxy/setup.bash &&
+         ros2 launch realsense2_camera rs_launch.py
+           align_depth.enable:=true
+           pointcloud.enable:=false
+           depth_module.profile:=640x480x30
+           rgb_camera.profile:=640x480x30
+           initial_reset:=true
+         2>&1 | grep -v 'compressed_depth_image_transport'"
     profiles: ["tools"]
     
   realsense_ir:
@@ -176,4 +182,40 @@ services:
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash && mkdir -p /root/.ros/log && ros2 launch /etc/calibration/tf_static_launch.py"
+    profiles: ["tools"]
+    
+    
+  yolo_detector:
+    image: summit-kinetic-foxy-bridge:20.04
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${DOMAIN_ID}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    volumes:
+      - ./vision/yolo:/opt/yolo_ws/src/yolo_detector:rw
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - "source /opt/ros/foxy/setup.bash &&
+         cd /opt/yolo_ws &&
+         colcon build --packages-select yolo_detector --symlink-install &&
+         source install/setup.bash &&
+         ros2 run yolo_detector yolo_detector --ros-args -p model_path:=/opt/yolo_ws/src/yolo_detector/models/Yolov8m_SPOT.onnx"
+    profiles: ["tools"]
+    
+    
+  perception_supervisor:
+    image: summit-kinetic-foxy-bridge:20.04
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${DOMAIN_ID}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    volumes:
+      - ./vision/supervisor:/opt/supervisor_ws/src/perception_supervisor:rw
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - "source /opt/ros/foxy/setup.bash &&
+         cd /opt/supervisor_ws &&
+         colcon build --packages-select perception_supervisor --symlink-install &&
+         source install/setup.bash &&
+         ros2 run perception_supervisor perception_supervisor"
     profiles: ["tools"]
