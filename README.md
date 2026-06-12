@@ -1,4 +1,4 @@
-# Pont ROS 1 Kinetic ↔ ROS 2 Foxy pour la téléopération du Summit XL avec vision embarquée
+# **Conception et intégration** d’une solution de **téléopération inter-version** pour le **Robotnik Summit XL** (**ROS 1 Kinetic** ↔ **ROS 2 Foxy**) avec un module de **vision embarquée** assistée par **IA**.
 
 Pont Docker qui relie le robot **Summit XL** (Robotnik, ROS Kinetic figé) à
 des nœuds **ROS 2 Foxy** sur le PC. Permet de lire les capteurs du robot
@@ -19,38 +19,34 @@ Rédigé par Ronan Le Guenne : ronan.le-guenne@polytech-lille.net
 4. [Topics disponibles](#topics-disponibles)
 5. [Bridge sélectif (parameter_bridge)](#bridge-sélectif-parameter_bridge)
 6. [Pilotage au clavier (teleop)](#pilotage-au-clavier-teleop)
-7. [Outils graphiques (RViz, rqt)](#outils-graphiques-rviz-rqt)
-8. [Vision (RealSense + AprilTag + YOLO + supervisor)](#vision-realsense--apriltag--yolo--supervisor)
-9. [Limitations connues](#limitations-connues)
-10. [Dépannage](#dépannage)
-11. [Choix d'architecture (résumé du diagnostic)](#choix-darchitecture-résumé-du-diagnostic)
-12. [Évolutions prévues](#évolutions-prévues)
+7. [Vision (RealSense + AprilTag + YOLO + supervisor)](#vision-realsense--apriltag--yolo--supervisor)
+8. [Choix d'architecture (résumé du diagnostic)](#choix-darchitecture-résumé-du-diagnostic)
+9. [Dépannage](#dépannage)
+10. [Évolutions prévues](#évolutions-prévues)
+11. [Fichiers du projet](#fichiers-du-projet)
 
 ---
 
 ## Démarrage rapide
 
 ```bash
-# 1. PC sur WiFi du robot (SSID : SXL00181120AA)
+# 1. PC sur WiFi du robot (SSID : SXL00181120AA, mdp : R0b0tn1K)
 ping -c 2 192.168.0.200           # doit repondre
 
-# 2. Lancer le pont (terminal 1)
+# 2. Pipeline complet (bridge + vision + supervisor)
 cd ~/Pro/Stage_CNRS/ROS/summit_foxy
-docker compose run --rm bridge
-
-# 3. Ouvrir un shell ROS 2 (terminal 2)
-docker compose run --rm shell
-ros2 topic list | grep summit_xl
-ros2 topic echo /summit_xl/robotnik_base_hw/battery
+./launch_all.sh           # lance tout dans tmux dans le bon ordre
+./launch_all.sh attach    # voir les logs (Ctrl+B puis N/P pour naviguer)
+./launch_all.sh stop      # arrêter
 ```
 
-Pour lancer la chaîne vision complète d'un coup, utiliser le script
-orchestré décrit dans [`vision/README.md`](vision/README.md#démarrage) :
+Pour ne lancer que le pont (sans vision) :
 
 ```bash
-./launch_all.sh           # lance tout dans tmux dans le bon ordre
-./launch_all.sh attach    # voir les logs
-./launch_all.sh stop      # arrêter
+docker compose run --rm bridge
+# Puis dans un autre terminal :
+docker compose run --rm shell
+ros2 topic list | grep summit_xl
 ```
 
 ---
@@ -67,12 +63,10 @@ orchestré décrit dans [`vision/README.md`](vision/README.md#démarrage) :
                                             v
                                 +-----------+-----------+
                                 |  Conteneurs Foxy      |
-                                |  (shell, teleop,      |
-                                |   rviz, rqt,          |
-                                |   realsense, apriltag,|
-                                |   refiner, pose_fuser,|
-                                |   yolo_detector,      |
-                                |   supervisor)         |
+                                |  realsense, apriltag, |
+                                |  refiner, pose_fuser, |
+                                |  yolo, supervisor,    |
+                                |  shell, teleop, rviz  |
                                 +-----------------------+
                                           PC (192.168.0.219)
 ```
@@ -81,7 +75,8 @@ Trois éléments clés :
 - Le robot reste **intouché** : on ne fait que lire son `roscore`.
 - Le bridge utilise **`parameter_bridge`** (sélectif via YAML), pas
   `dynamic_bridge` (qui s'abonne à tous les topics ROS 2).
-- Tous les processus ROS 2 utilisent **CycloneDDS** et **`ROS_DOMAIN_ID=0`**.
+- Tous les processus ROS 2 utilisent **CycloneDDS** et **`ROS_DOMAIN_ID=0`**,
+  avec une config commune via `cyclonedds.xml` (buffer réseau 64 MB).
 
 ---
 
@@ -90,13 +85,19 @@ Trois éléments clés :
 ### Matériel et réseau
 
 - Summit XL HL allumé, accessible en `192.168.0.200`
-- PC sur le **WiFi du robot** (SSID `SXL00181120AA`, mot de passe `R0b0tn1K`)
-- **Pas eduroam** (multicast DDS bloqué), **VPN déconnecté**
+- PC sur le **point d'accès WiFi du robot** (SSID `SXL00181120AA`, mot de passe `R0b0tn1K`)
 
 ### Logiciel
 
 - Docker 25+ et Docker Compose v2
 - Aucun ROS 2 natif requis sur l'hôte
+
+### Tuning kernel UDP (à faire à chaque reboot du PC, ou persister)
+
+```bash
+sudo sysctl -w net.core.rmem_max=2147483647
+sudo sysctl -w net.core.rmem_default=2147483647
+```
 
 ### Vérifications session
 
@@ -112,15 +113,11 @@ xhost +local:docker
 
 ## Topics disponibles
 
-Topics ROS 1 pontés vers ROS 2 (liste non exhaustive — voir bridge YAML pour
-les actifs) :
+Topics ROS 1 pontés vers ROS 2 :
 
 | Topic ROS 2                                  | Type                    | Sens       |
 |----------------------------------------------|-------------------------|------------|
 | `/summit_xl/front_laser/scan`                | `sensor_msgs/LaserScan` | robot → PC |
-| `/summit_xl/imu/data`                        | `sensor_msgs/Imu`       | robot → PC |
-| `/summit_xl/robotnik_base_control/odom`      | `nav_msgs/Odometry`     | robot → PC |
-| `/summit_xl/robotnik_base_hw/battery`        | `std_msgs/Float32`      | robot → PC |
 | `/tf`, `/tf_static`                          | `tf2_msgs/TFMessage`    | robot → PC |
 | `/summit_xl/robotnik_base_control/cmd_vel`   | `geometry_msgs/Twist`   | PC → robot |
 
@@ -130,16 +127,16 @@ Topics ROS 2 publiés par la couche vision : voir [`vision/README.md`](vision/RE
 
 ## Bridge sélectif (parameter_bridge)
 
-Migration de `dynamic_bridge` (qui pontait tous les topics ROS 2 vers ROS 1
-automatiquement) vers `parameter_bridge` (sélectif par YAML).
+Migration de `dynamic_bridge` (qui pontait tous les topics ROS 2 vers ROS 1)
+vers `parameter_bridge` (sélectif par YAML).
 
 Configuration dans `bridge/topics.yaml` :
 
 ```yaml
 topics:
   - { topic: /summit_xl/front_laser/scan, type: sensor_msgs/msg/LaserScan, queue_size: 10 }
-  - { topic: /tf,        type: tf2_msgs/msg/TFMessage,         queue_size: 100 }
-  - { topic: /tf_static, type: tf2_msgs/msg/TFMessage,         queue_size: 100 }
+  - { topic: /tf,        type: tf2_msgs/msg/TFMessage, queue_size: 100 }
+  - { topic: /tf_static, type: tf2_msgs/msg/TFMessage, queue_size: 100 }
   - { topic: /summit_xl/robotnik_base_control/cmd_vel, type: geometry_msgs/msg/Twist, queue_size: 10 }
 
 services_1_to_2: []
@@ -150,6 +147,12 @@ Les paramètres sont chargés par `entrypoint.sh` via `rosparam load` à la
 racine du master ROS 1, puis lus par `parameter_bridge` via XmlRpc.
 
 Pour ajouter un topic : éditer le YAML et relancer le service `bridge`.
+
+**Note** : le bridge publie `/tf_static` en DURABILITY_VOLATILE, incompatible
+avec les subscribers tf2 standard qui attendent TRANSIENT_LOCAL. Les TF
+critiques du robot (notamment `summit_xl_front_laser_link`) sont donc
+publiées localement par le service `tf_static` du projet vision. Voir
+[`vision/README.md`](vision/README.md#goulot-détranglement-dds-et-contournements).
 
 ---
 
@@ -167,33 +170,12 @@ Pour ajouter un topic : éditer le YAML et relancer le service `bridge`.
 docker compose run --rm teleop
 ```
 
-Touches : `i` avant, `,` arrière, `j`/`l` rotation, `k` stop, `q`/`z` vitesse
-max ±10%. **Taper plusieurs `z` au démarrage** pour réduire la vitesse à ~0.1
-m/s avant tout essai.
+Touches : `i` avant, `,` arrière, `j`/`l` rotation, `k` stop, `q`/`z`
+vitesse max ±10%. **Taper plusieurs `z` au démarrage** pour réduire la
+vitesse à ~0.1 m/s avant tout essai.
 
 L'à-coup au démarrage vient de l'absence de rampe d'accélération dans
 `teleop_twist_keyboard`. Voir [Évolutions](#évolutions-prévues).
-
----
-
-## Outils graphiques (RViz, rqt)
-
-Prérequis : `xhost +local:docker` une fois par session de bureau.
-
-```bash
-docker compose run --rm rviz      # visualisation 3D
-docker compose run --rm rqt       # introspection, plot, console
-```
-
-Configs RViz prêtes dans `rviz_configs/` :
-- `realsense_d435i.rviz` — cam seule
-- `apriltag_d435i.rviz` — cam + TF tags
-- `apriltag_ir_d435i.rviz` — mode IR
-- `SPOT_TRACKING.rviz` — pipeline complet avec `/spot_target_pose`
-
-**Limitations connues** :
-- `RobotModel` non disponible (URDF côté Kinetic, non bridgé)
-- `2D Goal Pose` publie sur `/goal_pose` mais aucun planificateur ne l'écoute
 
 ---
 
@@ -203,130 +185,45 @@ Pipeline complet documenté dans [`vision/README.md`](vision/README.md) :
 
 - **Driver D435i** (RGB + depth + IR) sur USB 3.0 direct au PC
 - **AprilTag** (RGB ou IR) avec raffinement pose via depth (médiane 5×5)
-- **Calibration extrinsèque** D435i sur Summit + 3 tags sur Spot
+- **Calibration extrinsèque** D435i et LiDAR sur Summit + 3 tags sur Spot
 - **Pose Spot** via chaînage TF et fusion multi-tags
-- **YOLO** (YOLOv8m ONNX + ByteTrack) comme repli quand tags non visibles
-- **Supervisor** : machine d'états TAG_OK / YOLO_TRACKING / LOST avec fusion
-  YOLO bearing + LiDAR distance
+- **YOLO** (YOLOv8m ONNX + ByteTrack) comme repli quand tags non visibles,
+  activé à la demande par le supervisor pour économiser le CPU
+- **Supervisor** : machine d'états TAG_OK / YOLO_TRACKING / LOST avec
+  fusion YOLO bearing + LiDAR distance
+
+Particularités du pipeline final :
+- Subscribers cam en mode **JPEG** (`/camera/color/image_raw/compressed`)
+  pour contourner le goulot multi-subscribers Cyclone DDS Foxy
+- YOLO **lazy + décimé** à 5 Hz quand actif, désactivé quand TAG_OK
+- Plusieurs **patches QoS** appliqués (apriltag BEST_EFFORT, cyclonedds.xml,
+  buffer kernel UDP). Détails et chronologie dans [`vision/README.md`](vision/README.md#goulot-détranglement-dds-et-contournements).
 
 Sortie unifiée : `/spot_target_pose` + `/perception_status`.
 
 ---
 
-## Limitations connues
-
-### Bridge actif → cam D435i dégradée
-
-Avec le bridge actif, `/camera/color/image_raw` passe de ~24 Hz à ~2-3 Hz,
-alors que la cam est USB locale et ne transite pas par le bridge.
-
-Vérifications effectuées qui n'expliquent pas le comportement :
-- CPU non saturé (40 % sur 16 cœurs)
-- `network_mode: host` partout
-- `net.core.rmem_max` augmenté à 2 GB sans effet
-- Pas de fragments UDP perdus (`netstat -s | grep Reasm` vide)
-- `receive buffer errors` UDP n'augmentent plus après tuning kernel
-- Allègement YAML bridge (11 → 4 topics) sans amélioration durable
-- MultiThreadedExecutor du supervisor sans effet
-
-Hypothèse non confirmée : limitation Cyclone DDS Foxy avec
-coexistence multi-flux sur WiFi. À revalider en RJ45 + RPi4 embarqué.
-
-### Débit côté Foxy plus bas que côté Kinetic
-
-L'IMU publie à 50 Hz côté Kinetic mais arrive à ~4 Hz côté Foxy via le
-bridge sur WiFi. Suffisant pour le pilotage, à garder à l'esprit pour des
-applications temps réel.
-
-### Bug d'ordre de démarrage DDS
-
-Si le bridge démarre avant `perception_supervisor`, la subscription LiDAR
-du supervisor reste muette. Le script `launch_all.sh` impose l'ordre.
-
-### RViz : RobotModel et Nav2 absents
-
-URDF et planificateurs Nav2 non installés. Squelette TF visible suffit pour
-la plupart des besoins de debug.
-
----
-
-## Dépannage
-
-### `ros2 topic list` ne montre pas les topics `summit_xl`
-
-À vérifier dans l'ordre :
-1. Le bridge tourne (`docker ps` doit montrer son conteneur)
-2. WiFi du robot actif (`ip addr show wlo1` doit montrer `192.168.0.219`)
-3. VPN/Warp désactivé (`warp-cli status` : Disconnected)
-
-### `ros2 topic echo` muet alors que `topic list` voit le topic
-
-RMW ou domaine incohérent. Vérifier :
-```bash
-docker exec <container> printenv | grep -E "RMW|DOMAIN"
-# attendu : RMW_IMPLEMENTATION=rmw_cyclonedds_cpp et ROS_DOMAIN_ID=0
-```
-
-### Le robot ne bouge pas malgré teleop
-
-1. Arrêt d'urgence désarmé (tiré) ?
-2. Bridge voit-il `Passing message from ROS 2 ... Twist to ROS 1` ?
-3. Manette PS4 prise de contrôle ? Appuyer sur bouton PS pour libérer.
-
-### RViz/rqt : `cannot connect to X server`
-
-```bash
-xhost +local:docker
-```
-À refaire à chaque session de bureau.
-
-### `ros2-daemon` hôte squatte le port 7400
-
-```bash
-pkill -9 -f ros2-daemon
-```
-
-### Caméra ou AprilTag
-
-Voir [`vision/README.md`](vision/README.md#dépannage).
-
----
-
 ## Choix d'architecture (résumé du diagnostic)
 
-Trois architectures écartées avant d'arriver à la configuration actuelle :
+### Autres pistes écartées
 
-1. **`ros1_bridge` Kinetic ↔ Jazzy** : 4 versions DDS d'écart, livraison
-   impossible (type hash incompatible). → Repli sur Foxy.
-
-2. **Foxy ↔ Foxy sur eduroam** : multicast DDS bloqué par le filtrage
-   eduroam (`239.255.0.1:7400`). → Repli sur WiFi du robot.
-
-3. **Foxy ↔ Foxy avec Fast DDS** : livraison KO entre conteneurs en
-   `network_mode: host` sur le même hôte. → Repli sur CycloneDDS.
-
-Autres pistes écartées :
 - **`ros1_bridge` Kinetic ↔ Humble** : Humble n'a pas de paquets ROS 1
   en apt sur Ubuntu 22.04, conflits Python (3.8 vs 3.10) à la compilation
+  
 - **Zenoh** : bug de handshake TCPROS non corrigé côté ROS 1 Kinetic
-- **Migration robot vers ROS 2** : plusieurs semaines de travail,
-  risque élevé sur un robot de labo partagé
 
----
+- **Migration robot vers ROS 2** : plusieurs semaines, risque élevé sur
+  robot de labo partagé
 
 ## Évolutions prévues
 
+- **PID d'asservissement** linéaire/angulaire sur `/spot_target_pose`,
+  avec adaptation selon `/perception_status`
 - **Validation RJ45 + RPi4 embarqué** : passage en Ethernet pour éliminer
-  les pertes WiFi et valider que les limitations Cyclone DDS observées
-  disparaissent
+  les pertes WiFi et stabiliser DDS
 - **Rampe d'accélération** sur les `cmd_vel` (`nav2_velocity_smoother`
   ou nœud custom) pour éliminer les à-coups teleop
-- **Affichage RobotModel** : monter `summit_xl_description` et lancer un
-  `robot_state_publisher` côté Foxy
-- **Nav2 + AMCL** pour la navigation autonome (le bouton 2D Goal Pose
-  serait alors fonctionnel)
-- **Migration Foxy → Humble** (Foxy EOL)
-- **Lien Ethernet PC ↔ Summit** pour des applications temps réel
+- **Nav2 + AMCL** pour la navigation autonome
 - **Évolutions vision** : voir [`vision/README.md`](vision/README.md#évolutions-prévues)
 
 ---
@@ -336,17 +233,19 @@ Autres pistes écartées :
 ```
 summit_foxy/
 ├── Dockerfile             # Image Noetic + Foxy + ros1_bridge + CycloneDDS + vision
-├── docker-compose.yml     # Tous les services
+├── docker-compose.yml     # Tous les services (CYCLONEDDS_URI partagé)
 ├── entrypoint.sh          # Lancement bridge avec attente master ROS 1
 ├── launch_all.sh          # Orchestration tmux de la chaîne complète
+├── cyclonedds.xml         # Config DDS partagée (buffer 64 MB)
 ├── env.example            # ROBOT_IP, MY_IP, DOMAIN_ID
 ├── README.md              # Ce fichier
 ├── bridge/
 │   └── topics.yaml        # Configuration parameter_bridge
 ├── vision/
 │   ├── README.md          # Doc vision détaillée
-│   ├── refiner/
-│   ├── apriltag/
+│   ├── refiner/           # apriltag_refiner + pose_fuser
+│   ├── apriltag/          # config tags YAML
+│   ├── calibration/       # tf_static_launch.py
 │   ├── supervisor/        # perception_supervisor
 │   └── yolo/              # yolo_detector + modèle ONNX
 └── rviz_configs/
