@@ -14,6 +14,9 @@
 # Pour les services graphiques (rviz, rqt) il faut autoriser
 # l'affichage UNE FOIS par session de bureau :
 #   xhost +local:docker
+#
+# Configuration Cyclone DDS partagee par tous les services via cyclonedds.xml
+# (buffers reseau augmentes pour les gros flux video).
 
 services:
   bridge:
@@ -24,9 +27,11 @@ services:
       - ROS_IP=192.168.0.219
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
     volumes:
-      - ./entrypoint.sh:/entrypoint.sh:ro  
+      - ./entrypoint.sh:/entrypoint.sh:ro
       - ./bridge/topics.yaml:/opt/bridge_config/topics.yaml:ro
+      - ./cyclonedds.xml:/opt/cyclonedds.xml:ro
     command: ["parameter"]
     profiles: ["tools"]
 
@@ -36,6 +41,9 @@ services:
     environment:
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
+    volumes:
+      - ./cyclonedds.xml:/opt/cyclonedds.xml:ro
     entrypoint: ["/bin/bash", "-lc"]
     command: ["source /opt/ros/foxy/setup.bash && { [ -f /opt/apriltag_ws/install/setup.bash ] && source /opt/apriltag_ws/install/setup.bash; }; exec bash"]
     profiles: ["tools"]
@@ -48,6 +56,9 @@ services:
     environment:
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
+    volumes:
+      - ./cyclonedds.xml:/opt/cyclonedds.xml:ro
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash && ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r /cmd_vel:=/summit_xl/robotnik_base_control/cmd_vel"
@@ -59,11 +70,13 @@ services:
     environment:
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
       - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./rviz_configs:/rviz_configs:rw
+      - ./cyclonedds.xml:/opt/cyclonedds.xml:ro
     entrypoint: ["/bin/bash", "-lc"]
     command: ["source /opt/ros/foxy/setup.bash && ros2 run rviz2 rviz2"]
     profiles: ["tools"]
@@ -74,14 +87,16 @@ services:
     environment:
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
       - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./cyclonedds.xml:/opt/cyclonedds.xml:ro
     entrypoint: ["/bin/bash", "-lc"]
     command: ["source /opt/ros/foxy/setup.bash && rqt"]
     profiles: ["tools"]
-    
+
   realsense:
     image: summit-kinetic-foxy-bridge:20.04
     network_mode: host
@@ -89,8 +104,10 @@ services:
     environment:
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
     volumes:
       - /dev:/dev
+      - ./cyclonedds.xml:/opt/cyclonedds.xml:ro
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash &&
@@ -102,7 +119,7 @@ services:
            initial_reset:=true
          2>&1 | grep -v 'compressed_depth_image_transport'"
     profiles: ["tools"]
-    
+
   realsense_ir:
     image: summit-kinetic-foxy-bridge:20.04
     network_mode: host
@@ -110,89 +127,100 @@ services:
     environment:
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
     volumes:
       - /dev:/dev
+      - ./cyclonedds.xml:/opt/cyclonedds.xml:ro
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash && ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true pointcloud.enable:=false depth_module.profile:=640x480x30 rgb_camera.profile:=640x480x30 initial_reset:=true enable_infra1:=true enable_infra2:=true depth_module.emitter_enabled:=2"
     profiles: ["tools"]
-   
+
   apriltag:
     image: summit-kinetic-foxy-bridge:20.04
     network_mode: host
     environment:
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
     volumes:
-    - ./vision/apriltag/tags_36h11_filter.yaml:/opt/apriltag_ws/install/apriltag_ros/share/apriltag_ros/cfg/tags_36h11_filter.yaml:ro
+      - ./vision/apriltag/tags_36h11_filter.yaml:/opt/apriltag_ws/install/apriltag_ros/share/apriltag_ros/cfg/tags_36h11_filter.yaml:ro
+      - ./cyclonedds.xml:/opt/cyclonedds.xml:ro
     entrypoint: ["/bin/bash", "-lc"]
     command:
-      - "source /opt/ros/foxy/setup.bash && source /opt/apriltag_ws/install/setup.bash && ros2 launch apriltag_ros tag_realsense.launch.py camera_name:=/camera/color image_topic:=image_raw"
+      - "source /opt/ros/foxy/setup.bash && source /opt/apriltag_ws/install/setup.bash && ros2 launch apriltag_ros tag_realsense.launch.py camera_name:=/camera/color image_topic:=image_raw image_transport:=compressed"
     profiles: ["tools"]
-    
+
   apriltag_ir:
     image: summit-kinetic-foxy-bridge:20.04
     network_mode: host
     environment:
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
     volumes:
-    - ./vision/apriltag/tags_36h11_filter.yaml:/opt/apriltag_ws/install/apriltag_ros/share/apriltag_ros/cfg/tags_36h11_filter.yaml:ro
+      - ./vision/apriltag/tags_36h11_filter.yaml:/opt/apriltag_ws/install/apriltag_ros/share/apriltag_ros/cfg/tags_36h11_filter.yaml:ro
+      - ./cyclonedds.xml:/opt/cyclonedds.xml:ro
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash && source /opt/apriltag_ws/install/setup.bash && ros2 launch apriltag_ros tag_realsense.launch.py camera_name:=/camera/infra1 image_topic:=image_rect_raw"
     profiles: ["tools"]
-    
+
   refiner:
     image: summit-kinetic-foxy-bridge:20.04
     network_mode: host
     environment:
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
     volumes:
       - ./vision/refiner:/opt/refiner_ws/src/apriltag_refiner:rw
+      - ./cyclonedds.xml:/opt/cyclonedds.xml:ro
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash && source /opt/apriltag_ws/install/setup.bash && cd /opt/refiner_ws && colcon build --packages-select apriltag_refiner --symlink-install && source /opt/refiner_ws/install/setup.bash && ros2 run apriltag_refiner refiner"
     profiles: ["tools"]
-    
-    
+
   pose_fuser:
     image: summit-kinetic-foxy-bridge:20.04
     network_mode: host
     environment:
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
     volumes:
       - ./vision/refiner:/opt/refiner_ws/src/apriltag_refiner:rw
+      - ./cyclonedds.xml:/opt/cyclonedds.xml:ro
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash && source /opt/apriltag_ws/install/setup.bash && cd /opt/refiner_ws && colcon build --packages-select apriltag_refiner --symlink-install && source /opt/refiner_ws/install/setup.bash && ros2 run apriltag_refiner pose_fuser"
     profiles: ["tools"]
-    
-    
+
   tf_static:
     image: summit-kinetic-foxy-bridge:20.04
     network_mode: host
     environment:
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
     volumes:
       - ./vision/calibration:/etc/calibration:ro
+      - ./cyclonedds.xml:/opt/cyclonedds.xml:ro
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash && mkdir -p /root/.ros/log && ros2 launch /etc/calibration/tf_static_launch.py"
     profiles: ["tools"]
-    
-    
+
   yolo_detector:
     image: summit-kinetic-foxy-bridge:20.04
     network_mode: host
     environment:
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
     volumes:
       - ./vision/yolo:/opt/yolo_ws/src/yolo_detector:rw
+      - ./cyclonedds.xml:/opt/cyclonedds.xml:ro
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash &&
@@ -201,16 +229,17 @@ services:
          source install/setup.bash &&
          ros2 run yolo_detector yolo_detector --ros-args -p model_path:=/opt/yolo_ws/src/yolo_detector/models/Yolov8m_SPOT.onnx"
     profiles: ["tools"]
-    
-    
+
   perception_supervisor:
     image: summit-kinetic-foxy-bridge:20.04
     network_mode: host
     environment:
       - ROS_DOMAIN_ID=${DOMAIN_ID}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
     volumes:
       - ./vision/supervisor:/opt/supervisor_ws/src/perception_supervisor:rw
+      - ./cyclonedds.xml:/opt/cyclonedds.xml:ro
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash &&

@@ -59,6 +59,8 @@ RUN mkdir -p /opt/apriltag_ws/src \
  && cd /opt/apriltag_ws/src \
  && git clone https://github.com/AprilRobotics/apriltag.git \
  && git clone https://github.com/Adlink-ROS/apriltag_ros.git -b foxy-devel \
+ && sed -i 's/rmw_qos_profile_default/rmw_qos_profile_sensor_data/' \
+        /opt/apriltag_ws/src/apriltag_ros/apriltag_ros/src/AprilTagNode.cpp \
  && cd /opt/apriltag_ws \
  && /bin/bash -c "source /opt/ros/foxy/setup.bash && colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release" \
  && rm -rf build log

@@ -87,7 +87,7 @@ fi
 
 echo "[launch] Arret des anciens containers..."
 tmux kill-session -t "$SESSION" 2>/dev/null || true
-docker compose down --remove-orphans 2>/dev/null || true
+docker kill $(docker ps -q) 2>/dev/null || true
 
 # ----------------------------------------------------------------------
 # Inhibe la mise en veille pendant la session
@@ -154,22 +154,4 @@ echo "[launch] [8/8] yolo_detector (YOLOv8m + ByteTrack)..."
 launch_in_window "yolo" "docker compose run --rm yolo_detector"
 sleep 3
 
-# ----------------------------------------------------------------------
-# Fini
-# ----------------------------------------------------------------------
 
-echo
-echo "[launch] ============================================="
-echo "[launch] Pipeline lance. Session tmux : $SESSION"
-echo "[launch] ============================================="
-echo "[launch] Commandes utiles :"
-echo "[launch]   tmux attach -t $SESSION       : voir les logs"
-echo "[launch]   (dans tmux : Ctrl+B puis N    : fenetre suivante)"
-echo "[launch]   (dans tmux : Ctrl+B puis P    : fenetre precedente)"
-echo "[launch]   (dans tmux : Ctrl+B puis D    : detacher sans tuer)"
-echo "[launch]   $0 status                     : voir l'etat"
-echo "[launch]   $0 stop                       : tout arreter"
-echo "[launch]"
-echo "[launch] Verification rapide :"
-echo "[launch]   docker compose run --rm shell -c 'source /opt/ros/foxy/setup.bash && ros2 topic echo /perception_status'"
-echo

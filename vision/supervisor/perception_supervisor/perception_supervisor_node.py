@@ -8,15 +8,15 @@ Source secondaire : /yolo_detections + /summit_xl/front_laser/scan
 
 Etats :
 - TAG_OK         : pose AprilTag fraiche, on la transmet telle quelle
+                   (yolo_detector DESACTIVE pour economiser le CPU)
 - YOLO_TRACKING  : pas de tag, mais YOLO + LiDAR donnent une pose 3D approximative
+                   (yolo_detector ACTIVE)
 - LOST           : ni tag ni YOLO depuis trop longtemps, on arrete
+                   (yolo_detector ACTIVE pour permettre la reprise)
 
-Architecture :
-Utilise un MultiThreadedExecutor + ReentrantCallbackGroup. Sinon, les
-callbacks YOLO (lents a cause des TF transforms) bloquent les callbacks
-LaserScan, qui finissent par decrocher leur subscription DDS.
+Le supervisor pilote /yolo_enable (Bool) pour activer/desactiver yolo
+dynamiquement, economisant le CPU quand le tag est visible.
 
-Hysteresis :
 - TAG_OK -> YOLO  : si pas de pose tag depuis 1.0 s
 - YOLO -> TAG_OK  : des qu'une pose tag revient (instantane)
 - YOLO -> LOST    : si pas de YOLO non plus depuis 3.0 s
@@ -37,7 +37,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import LaserScan, CameraInfo
 from vision_msgs.msg import Detection2DArray
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 
 from tf2_ros import Buffer, TransformListener
 import tf2_geometry_msgs  # noqa : enregistre les conversions PoseStamped
@@ -51,6 +51,7 @@ CAM_INFO_TOPIC = '/camera/color/camera_info'
 
 OUT_POSE_TOPIC = '/spot_target_pose'
 OUT_STATUS_TOPIC = '/perception_status'
+YOLO_ENABLE_TOPIC = '/yolo_enable'
 
 # ----------- Frames --------------
 SUMMIT_FRAME = 'summit_xl_base_link'
@@ -120,6 +121,12 @@ class PerceptionSupervisor(Node):
         self.pub_pose = self.create_publisher(PoseStamped, OUT_POSE_TOPIC, 10)
         self.pub_status = self.create_publisher(String, OUT_STATUS_TOPIC, 10)
 
+        # Publisher pour activer/desactiver yolo dynamiquement
+        # (yolo_detector demarre en mode DISABLED, on lui dit quand activer)
+        self.pub_yolo_enable = self.create_publisher(
+            Bool, YOLO_ENABLE_TOPIC, 10)
+        self._yolo_currently_enabled: Optional[bool] = None  # force publication initiale
+
         # Etat interne
         self.state = 'LOST'
         self.yolo_confidence = 0.0
@@ -134,14 +141,18 @@ class PerceptionSupervisor(Node):
         self.get_logger().info(
             "Perception supervisor pret (multi-thread). "
             f"TAG_OK timeout = {TAG_FRESH_TIMEOUT}s, "
-            f"YOLO timeout = {YOLO_FRESH_TIMEOUT}s.")
+            f"YOLO timeout = {YOLO_FRESH_TIMEOUT}s. "
+            f"Yolo dynamiquement active via {YOLO_ENABLE_TOPIC}.")
 
     # ============== Monitoring =================
 
     def _log_stats(self):
+        yolo_state = ('ON' if self._yolo_currently_enabled else
+                      'OFF' if self._yolo_currently_enabled is False else 'INIT')
         self.get_logger().info(
             f"[STATS] scans={self.scan_count}, yolo={self.yolo_count}, "
             f"state={self.state}, conf={self.yolo_confidence:.2f}, "
+            f"yolo_enable={yolo_state}, "
             f"fx={'OK' if self.fx else 'NO'}, "
             f"scan={'OK' if self.last_scan else 'NO'}")
 
@@ -300,6 +311,11 @@ class PerceptionSupervisor(Node):
             current_state = self.state
             current_conf = self.yolo_confidence
 
+        # Activation/desactivation de yolo selon l'etat (hors lock)
+        # TAG_OK : on a un tag precis, pas besoin de yolo -> OFF (economise CPU)
+        # YOLO_TRACKING + LOST : on doit chercher avec yolo -> ON
+        self._set_yolo_enabled(current_state != 'TAG_OK')
+
         # Publication du status
         status = String()
         status.data = f"{current_state} conf={current_conf:.2f}"
@@ -321,6 +337,16 @@ class PerceptionSupervisor(Node):
             self.pub_pose.publish(out)
 
     # ============== Helpers =================
+
+    def _set_yolo_enabled(self, want: bool):
+        """Publie sur /yolo_enable seulement si l'etat change (edge-triggered)."""
+        if want != self._yolo_currently_enabled:
+            msg = Bool()
+            msg.data = want
+            self.pub_yolo_enable.publish(msg)
+            self._yolo_currently_enabled = want
+            self.get_logger().info(
+                f"yolo_enable -> {want} (state={self.state})")
 
     def _read_lidar_at_bearing(self, scan: LaserScan,
                                bearing_laser: float) -> Optional[float]:
