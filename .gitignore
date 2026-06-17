@@ -1,3 +1,17 @@
 .env
 __pycache__/
 *.pyc
+
+# === Fichiers d'identification (lourds, generes) ===
+# Rosbags
+identification/*/
+
+# Fichiers binaires Simulink/MATLAB
+*.slx
+*.mat
+*.slxc
+*.asv
+
+# Fichiers Python compiles
+__pycache__/
+*.pyc

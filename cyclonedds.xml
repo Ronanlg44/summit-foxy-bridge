@@ -7,8 +7,5 @@
         <General>
             <AllowMulticast>true</AllowMulticast>
         </General>
-        <Internal>
-            <MinimumSocketReceiveBufferSize>64MB</MinimumSocketReceiveBufferSize>
-        </Internal>
     </Domain>
 </CycloneDDS>

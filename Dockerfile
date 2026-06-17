@@ -1,5 +1,5 @@
 # ============================================================
-#  Pont ROS 1 Kinetic (Summit XL) <-> ROS 2 Foxy (PC)
+#  Pont ROS 1 Kinetic/Noetic (Summit XL) <-> ROS 2 Foxy (PC)
 #  + perception : RealSense D435i
 #  Ubuntu 20.04 : Noetic + Foxy desktop + ros1_bridge.
 # ============================================================
@@ -30,6 +30,8 @@ http://packages.ros.org/ros2/ubuntu focal main" \
         ros-foxy-vision-msgs \
         ros-noetic-rosbash \
         ros-noetic-tf2-msgs \
+        ros-noetic-nav-msgs \
+        ros-foxy-nav-msgs \
         iputils-ping \
         iproute2 \
         dnsutils \
@@ -47,7 +49,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-opencv \
         python3-pip \
         git \
- && pip3 install --no-cache-dir onnxruntime==1.16.3 \
  && pip3 install --no-cache-dir onnxruntime==1.16.3 supervision \
  && rm -rf /var/lib/apt/lists/*
 

@@ -1,4 +1,4 @@
-# **Conception et intégration** d’une solution de **téléopération inter-version** pour le **Robotnik Summit XL** (**ROS 1 Kinetic** ↔ **ROS 2 Foxy**) avec un module de **vision embarquée** assistée par **IA**.
+# **Conception et intégration** d’une solution de **téléopération inter-version** pour le **Robotnik Summit XL** (**ROS 1 Kinetic** ↔ **ROS 2 Foxy**) avec module de **vision embarquée** assistée par **IA**.
 
 Pont Docker qui relie le robot **Summit XL** (Robotnik, ROS Kinetic figé) à
 des nœuds **ROS 2 Foxy** sur le PC. Permet de lire les capteurs du robot
