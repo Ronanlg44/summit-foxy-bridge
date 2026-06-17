@@ -5,6 +5,7 @@ __pycache__/
 # === Fichiers d'identification (lourds, generes) ===
 # Rosbags
 identification/*/
+*.csv
 
 # Fichiers binaires Simulink/MATLAB
 *.slx
@@ -15,3 +16,7 @@ identification/*/
 # Fichiers Python compiles
 __pycache__/
 *.pyc
+
+#Images
+*.png
+*.jpeg
