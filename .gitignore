@@ -20,3 +20,23 @@ __pycache__/
 #Images
 *.png
 *.jpeg
+
+# === RPi4 branch additions ===
+# Modele YOLO (a copier manuellement sur la RPi4)
+data/yolo/*.onnx
+data/yolo/*.pt
+!data/yolo/.gitkeep
+
+# Bags d'identification (volumineux)
+identification/*/
+!identification/.gitkeep
+
+# Fichiers .env reels (env.rpi.example est dans le repo)
+.env
+.env.rpi
+
+# Backups
+*.bak
+*.pc.bak
+*.pc.bak.yml
+*.pc.bak.sh
