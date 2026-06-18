@@ -1,28 +1,15 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<!--
-  Configuration CycloneDDS pour Summit RPi4.
-  
-  Adapte pour :
-  - Interface eth0 (RJ45 vers le robot)
-  - RAM 8 Go disponible : buffers genereux
-  - Multicast active (autorise sur le reseau du robot)
--->
 <CycloneDDS xmlns="https://cdds.io/config"
             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
             xsi:schemaLocation="https://cdds.io/config
             https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
   <Domain Id="any">
     <General>
-      <!-- Force eth0 (RJ45) -->
-      <Interfaces>
-        <NetworkInterface name="eth0" priority="default" multicast="default" />
-      </Interfaces>
+      <NetworkInterfaceAddress>eth0</NetworkInterfaceAddress>
       <AllowMulticast>true</AllowMulticast>
       <MaxMessageSize>65500B</MaxMessageSize>
     </General>
     <Internal>
-      <!-- Buffer reseau eleve (8 Go RAM disponibles) -->
-      <SocketReceiveBufferSize min="64MB"/>
       <Watermarks>
         <WhcHigh>8MB</WhcHigh>
       </Watermarks>
