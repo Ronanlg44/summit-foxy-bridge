@@ -1,0 +1,94 @@
+# =====================================================================
+# Image autonome pour Summit RPi4 (ARM64)
+#
+# Pont ROS 1 Kinetic (Summit XL) <-> ROS 2 Foxy (RPi4)
+# + perception RealSense D435i + apriltag + YOLO ONNX
+# + asservissement PID 2-DOF avec gain scheduling
+#
+# Build cross-platform depuis PC x86_64 :
+#   docker buildx build --platform linux/arm64 \
+#       -f Dockerfile.rpi \
+#       -t summit-rpi:latest \
+#       --load .
+#
+# Build natif sur RPi4 (lent, ~60-90 min) :
+#   docker build -f Dockerfile.rpi -t summit-rpi:latest .
+# =====================================================================
+
+FROM arm64v8/ros:noetic-ros-base-focal
+
+SHELL ["/bin/bash", "-lc"]
+ENV DEBIAN_FRONTEND=noninteractive
+
+# =====================================================================
+# COUCHE 1 : ROS 2 Foxy + ros1_bridge + utilitaires
+# =====================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl gnupg2 lsb-release ca-certificates \
+    && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+        -o /usr/share/keyrings/ros-archive-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
+        http://packages.ros.org/ros2/ubuntu focal main" \
+        > /etc/apt/sources.list.d/ros2.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        ros-foxy-ros-base \
+        ros-foxy-ros1-bridge \
+        ros-foxy-rmw-cyclonedds-cpp \
+        ros-foxy-image-transport-plugins \
+        ros-foxy-compressed-image-transport \
+        ros-foxy-realsense2-camera \
+        ros-foxy-realsense2-camera-msgs \
+        ros-foxy-realsense2-description \
+        ros-foxy-apriltag \
+        ros-foxy-cv-bridge \
+        ros-foxy-image-geometry \
+        ros-foxy-vision-msgs \
+        ros-foxy-tf2-tools \
+        ros-foxy-tf2-geometry-msgs \
+        ros-foxy-rosbag2-storage-default-plugins \
+        ros-noetic-rosbash \
+        ros-noetic-tf2-msgs \
+        iputils-ping \
+        iproute2 \
+        dnsutils \
+        nano \
+        less \
+        tmux \
+    && rm -rf /var/lib/apt/lists/*
+
+# =====================================================================
+# COUCHE 2 : Outils de build + Python deps
+# =====================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3-colcon-common-extensions \
+        python3-scipy \
+        python3-opencv \
+        python3-pip \
+        git \
+    && pip3 install --no-cache-dir \
+        onnxruntime==1.16.3 \
+        supervision \
+    && rm -rf /var/lib/apt/lists/*
+
+# =====================================================================
+# COUCHE 3 : Build apriltag + apriltag_ros (Adlink fork)
+# =====================================================================
+RUN mkdir -p /opt/apriltag_ws/src \
+    && cd /opt/apriltag_ws/src \
+    && git clone https://github.com/AprilRobotics/apriltag.git \
+    && git clone https://github.com/Adlink-ROS/apriltag_ros.git -b foxy-devel \
+    && sed -i 's/rmw_qos_profile_default/rmw_qos_profile_sensor_data/' \
+        /opt/apriltag_ws/src/apriltag_ros/apriltag_ros/src/AprilTagNode.cpp \
+    && cd /opt/apriltag_ws \
+    && /bin/bash -c "source /opt/ros/foxy/setup.bash && \
+        colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release" \
+    && rm -rf build log
+
+# =====================================================================
+# Entrypoint
+# =====================================================================
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["dynamic"]

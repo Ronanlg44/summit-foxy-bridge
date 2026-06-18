@@ -1,0 +1,140 @@
+# =====================================================================
+# Services Docker pour Summit RPi4 (mode autonome)
+#
+# Profils :
+#   - "mission"     : vision + bridge + pid_controller (production)
+#   - "ident"       : vision + bridge + step_input + shell (identification)
+#   - "debug"       : shell seul (inspection topics, bagging manuel)
+#
+# Usage :
+#   docker compose -f docker-compose.rpi.yml --profile mission up
+#   docker compose -f docker-compose.rpi.yml --profile ident up
+# =====================================================================
+
+services:
+
+  # ===================================================================
+  # Bridge ROS 2 <-> ROS 1 (master sur le Summit)
+  # ===================================================================
+  bridge:
+    image: summit-rpi:latest
+    container_name: bridge
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
+      - ROS_MASTER_URI=http://${ROBOT_IP:-192.168.0.200}:11311
+      - ROS_IP=${MY_IP:-192.168.0.50}
+    volumes:
+      - ./cyclonedds.rpi.xml:/opt/cyclonedds.xml:ro
+      - ./bridge/topics.yaml:/opt/bridge_config/topics.yaml:ro
+      - ./entrypoint.sh:/entrypoint.sh:ro
+    profiles: ["mission", "ident"]
+    command: ["parameter"]
+
+  # ===================================================================
+  # Vision stack : realsense + apriltag + refiner + supervisor + yolo
+  # ===================================================================
+  vision_stack:
+    image: summit-rpi:latest
+    container_name: vision_stack
+    network_mode: host
+    privileged: true
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
+    volumes:
+      - /dev:/dev                                          # USB cam
+      - ./cyclonedds.rpi.xml:/opt/cyclonedds.xml:ro
+      - ./vision:/opt/vision_ws/src/vision:ro
+      - ./data/yolo:/data/yolo:ro                          # Modele ONNX externalise
+    profiles: ["mission", "ident"]
+    command:
+      - bash
+      - -c
+      - |
+        source /opt/ros/foxy/setup.bash &&
+        source /opt/apriltag_ws/install/setup.bash &&
+        cd /opt/vision_ws &&
+        colcon build --symlink-install 2>&1 | tail -5 &&
+        source install/setup.bash &&
+        echo "Vision stack pret. TODO : lancer realsense + apriltag + refiner + supervisor + yolo"
+
+  # ===================================================================
+  # Asservissement PID 2-DOF avec gain scheduling (mode mission)
+  # ===================================================================
+  pid_controller:
+    image: summit-rpi:latest
+    container_name: pid_controller
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
+    volumes:
+      - ./cyclonedds.rpi.xml:/opt/cyclonedds.xml:ro
+      - ./control:/opt/control_ws/src/control:ro
+    profiles: ["mission"]
+    command:
+      - bash
+      - -c
+      - |
+        source /opt/ros/foxy/setup.bash &&
+        cd /opt/control_ws &&
+        colcon build --symlink-install --packages-select pid_apriltag 2>&1 | tail -5 &&
+        source install/setup.bash &&
+        ros2 run pid_apriltag pid_apriltag
+
+  # ===================================================================
+  # Generation d'echelons cmd_vel (mode identification)
+  # ===================================================================
+  step_input:
+    image: summit-rpi:latest
+    container_name: step_input
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
+    volumes:
+      - ./cyclonedds.rpi.xml:/opt/cyclonedds.xml:ro
+      - ./control:/opt/control_ws/src/control:ro
+    profiles: ["ident"]
+    command:
+      - bash
+      - -c
+      - |
+        source /opt/ros/foxy/setup.bash &&
+        cd /opt/control_ws &&
+        colcon build --symlink-install --packages-select step_input 2>&1 | tail -5 &&
+        source install/setup.bash &&
+        ros2 run step_input step_input --ros-args \
+          -p axis:=${AXIS:-linear} \
+          -p step_value:=${STEP_VALUE:-0.15}
+
+  # ===================================================================
+  # Shell utilitaire (debug, bagging, ros2 topic)
+  # ===================================================================
+  shell:
+    image: summit-rpi:latest
+    container_name: shell
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/cyclonedds.xml
+    volumes:
+      - ./cyclonedds.rpi.xml:/opt/cyclonedds.xml:ro
+      - ./identification:/workspace/identification
+      - ./control:/workspace/control:ro
+    profiles: ["debug", "ident"]
+    stdin_open: true
+    tty: true
+    command:
+      - bash
+      - -c
+      - |
+        source /opt/ros/foxy/setup.bash &&
+        bash
