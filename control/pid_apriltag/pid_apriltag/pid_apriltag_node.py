@@ -82,7 +82,7 @@ class IpControllerDebug(Node):
         super().__init__('ip_apriltag_debug')
 
         # ============ Parametres ROS 2 ============
-        self.declare_parameter('target_distance', 1.0)
+        self.declare_parameter('target_distance', 1.5)
 
         # Gains Skogestad SIMC valides Simulink
         # LINEAIRE : Td_total = 0.2285 s

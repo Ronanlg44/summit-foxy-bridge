@@ -5,9 +5,15 @@ Spot dans le repere du Summit XL.
 
 Pour chaque tag detecte, compose T_cam_spot = T_cam_tag . T_tag_spot
 en utilisant scipy.spatial.transform.Rotation (gestion propre des
-quaternions et des conventions). Si plusieurs tags sont visibles, les
-positions sont fusionnees par moyenne ponderee 1/Z^2 ; l'orientation
-est celle du tag le plus proche.
+quaternions et des conventions).
+
+Strategie de fusion :
+- POSITION : si plusieurs tags visibles, moyenne ponderee 1/Z^2
+  (toujours fusionnee, meme si tag 0 visible).
+- ORIENTATION : si tag 0 (arriere du Spot) visible, on prend son
+  orientation EN PRIORITE ABSOLUE car c'est lui qui aligne le mieux
+  geometriquement le Summit derriere le Spot. Sinon, on prend
+  l'orientation du tag le plus proche.
 
 Sortie :
 - topic /spot_pose_in_summit (PoseStamped)
@@ -33,6 +39,11 @@ SUMMIT_FRAME = 'summit_xl_base_link'
 SPOT_FRAME = 'spot_base_link'
 
 TAG_FRAMES = {0: 'tag_0_link', 1: 'tag_1_link', 2: 'tag_2_link'}
+
+# Tag prioritaire pour l'orientation : tag arriere du Spot.
+# Aligne geometriquement le Summit derriere le Spot, alors que les tags
+# de flanc (1, 2) feraient s'aligner le Summit face au cote du Spot.
+PRIORITY_TAG_ID = 0
 
 
 def quat_msg_to_scipy(q_msg) -> R:
@@ -124,14 +135,31 @@ class PoseFuserNode(Node):
             f"Detections: {ids_used} | Fusionne {len(estimates)} estimations",
             throttle_duration_sec=1.0)
 
-        # Fusion position : moyenne ponderee
+        # Fusion position : moyenne ponderee 1/Z^2
+        # On garde toujours la fusion pour reduire le bruit, meme si tag 0 vu.
         total_weight = sum(e[2] for e in estimates)
         fused_pos = sum(e[0] * e[2] for e in estimates) / total_weight
 
-        # Fusion rotation : on prend celle du tag le plus proche
-        # (moyenne de quaternions non triviale, slerp/Markley overkill ici)
-        closest = max(estimates, key=lambda e: e[2])
-        fused_rot = closest[1]
+        # Fusion rotation : PRIORITE ABSOLUE au tag 0 (arriere du Spot)
+        # car son orientation aligne le Summit derriere le Spot.
+        # Si tag 0 non visible, fallback sur le tag le plus proche (1/Z^2 max).
+        priority_estimate = next(
+            (e for e in estimates if e[3] == PRIORITY_TAG_ID),
+            None
+        )
+        if priority_estimate is not None:
+            fused_rot = priority_estimate[1]
+            self.get_logger().debug(
+                f"Orientation: PRIORITY tag {PRIORITY_TAG_ID}",
+                throttle_duration_sec=1.0)
+        else:
+            # Fallback : tag le plus proche
+            closest = max(estimates, key=lambda e: e[2])
+            fused_rot = closest[1]
+            self.get_logger().debug(
+                f"Orientation: fallback tag {closest[3]} "
+                f"(priority tag {PRIORITY_TAG_ID} not visible)",
+                throttle_duration_sec=1.0)
 
         pose_in_cam = PoseStamped()
         pose_in_cam.header.frame_id = camera_frame
