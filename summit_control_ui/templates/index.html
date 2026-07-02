@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Summit Control UI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header>
+        <h1>Summit Control</h1>
+        <div class="rpi-info">Connecte a <b>{{ rpi_user }}@{{ rpi_host }}</b></div>
+    </header>
+
+    <main>
+        <!-- ============ SECTION MISSION ============ -->
+        <section class="card mission">
+            <h2>Mission</h2>
+            <div class="button-row">
+                <button class="btn btn-big btn-green" data-action="mission/mission">
+                    START MISSION
+                </button>
+                <button class="btn btn-big btn-blue" data-action="mission/ident">
+                    IDENTIFICATION
+                </button>
+                <button class="btn btn-big btn-red" data-action="mission/stop">
+                    STOP TOUT
+                </button>
+                <button class="btn" data-action="mission/status">
+                    Status
+                </button>
+                <button class="btn btn-red" data-action="cleanup">
+                   NETTOYER DOCKER
+                </button>
+            </div>
+        </section>
+
+        <!-- ============ SECTION SERVICES ============ -->
+        <section class="card">
+            <h2>Services individuels</h2>
+            <div class="services-grid">
+                {% for svc in services %}
+                <div class="service">
+                    <span class="service-label {% if svc.critical %}critical{% endif %}">
+                        {{ svc.label }}
+                    </span>
+                    <div class="service-actions">
+                        <button class="btn btn-small btn-green"
+                                data-service="{{ svc.name }}" data-verb="start">
+                            Start
+                        </button>
+                        <button class="btn btn-small btn-red"
+                                data-service="{{ svc.name }}" data-verb="stop">
+                            Stop
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <!-- ============ SECTION PID ============ -->
+        <section class="card pi">
+            <h2>Controleur PI</h2>
+            <div class="pi-controls">
+                <div class="pi-block">
+                    <h3>Regulation</h3>
+                    <button class="btn btn-green" data-pi="enable">
+                        Activer PI
+                    </button>
+                    <button class="btn btn-red" data-pi="disable">
+                        Desactiver PI
+                    </button>
+                </div>
+                <div class="pi-block">
+                    <h3>Envoi cmd reelle au robot</h3>
+                    <button class="btn btn-blue" data-pi="publish_real/false">
+                        DEBUG (topic /cmd_vel_debug)
+                    </button>
+                    <button class="btn btn-orange" data-pi="publish_real/true">
+                        REEL (le robot va bouger!)
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ SECTION STATUS ============ -->
+        <section class="card status">
+            <h2>Etat systeme RPi4</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <span class="status-label">Temperature CPU</span>
+                    <span class="status-value" id="cpu-temp">—</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Load average 1min</span>
+                    <span class="status-value" id="load">—</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">RAM</span>
+                    <span class="status-value" id="mem">—</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Disque</span>
+                    <span class="status-value" id="disk">—</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Session tmux summit_rpi</span>
+                    <span class="status-value" id="tmux">—</span>
+                </div>
+            </div>
+
+            <h3>Containers Docker actifs</h3>
+            <ul id="containers" class="containers-list">
+                <li class="empty">Aucun.</li>
+            </ul>
+        </section>
+
+        <!-- ============ CONSOLE ============ -->
+        <section class="card console">
+            <h2>Journal</h2>
+            <div id="console" class="console-box"></div>
+        </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

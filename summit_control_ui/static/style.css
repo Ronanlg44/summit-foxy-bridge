@@ -1,0 +1,181 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f1720;
+    color: #e6edf3;
+    padding: 16px;
+    line-height: 1.4;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    background: #1c2632;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    border: 1px solid #2d3745;
+}
+
+h1 { font-size: 1.6em; color: #4fc3f7; }
+h2 { font-size: 1.2em; color: #4fc3f7; margin-bottom: 12px; }
+h3 { font-size: 0.95em; color: #b0bec5; margin: 8px 0; }
+
+.rpi-info { color: #90a4ae; font-size: 0.9em; }
+
+main {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.card {
+    background: #1c2632;
+    border: 1px solid #2d3745;
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.card.mission { grid-column: 1 / -1; }
+.card.console { grid-column: 1 / -1; }
+
+/* ============ BOUTONS ============ */
+
+.btn {
+    padding: 8px 14px;
+    border: none;
+    border-radius: 6px;
+    background: #2d3745;
+    color: #e6edf3;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: 500;
+    transition: filter 0.15s, transform 0.05s;
+}
+
+.btn:hover { filter: brightness(1.15); }
+.btn:active { transform: scale(0.98); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-big { padding: 16px 24px; font-size: 1.05em; font-weight: 700; }
+.btn-small { padding: 6px 10px; font-size: 0.8em; }
+
+.btn-green { background: #2e7d32; }
+.btn-red { background: #c62828; }
+.btn-blue { background: #1565c0; }
+.btn-orange { background: #ef6c00; }
+
+/* ============ MISSION ============ */
+
+.button-row { display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* ============ SERVICES ============ */
+
+.services-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+.service {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #131a24;
+    border-radius: 4px;
+}
+
+.service-label { font-size: 0.9em; }
+.service-label.critical::before { content: "* "; color: #ffc107; font-weight: bold; }
+
+.service-actions { display: flex; gap: 6px; }
+
+/* ============ PI ============ */
+
+.pi-controls {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+}
+
+.pi-block {
+    padding: 12px;
+    background: #131a24;
+    border-radius: 6px;
+}
+
+.pi-block .btn {
+    margin-right: 8px;
+    margin-top: 6px;
+}
+
+/* ============ STATUS ============ */
+
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.status-item {
+    padding: 10px 12px;
+    background: #131a24;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.status-label { font-size: 0.75em; color: #78909c; text-transform: uppercase; }
+.status-value { font-size: 1.05em; font-weight: 600; color: #e6edf3; }
+
+.status-value.warn { color: #ffc107; }
+.status-value.error { color: #ef5350; }
+.status-value.ok { color: #66bb6a; }
+
+.containers-list {
+    list-style: none;
+    background: #131a24;
+    border-radius: 6px;
+    padding: 8px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.containers-list li {
+    padding: 4px 8px;
+    font-family: monospace;
+    font-size: 0.85em;
+    border-bottom: 1px solid #1c2632;
+}
+.containers-list li:last-child { border-bottom: none; }
+.containers-list li.empty { color: #78909c; font-style: italic; font-family: sans-serif; }
+
+/* ============ CONSOLE ============ */
+
+.console-box {
+    background: #000;
+    color: #00e676;
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 0.8em;
+    padding: 12px;
+    border-radius: 4px;
+    max-height: 240px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.console-box .log-entry {
+    margin-bottom: 2px;
+    line-height: 1.35;
+}
+.console-box .log-time { color: #78909c; }
+.console-box .log-err { color: #ef5350; }
+.console-box .log-ok { color: #66bb6a; }
