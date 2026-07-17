@@ -1,73 +1,31 @@
 """
-Controleur I-P du Summit XL
-pour suivre le Spot via AprilTag. Deux boucles : LINEAIRE + ANGULAIRE.
+Controleur PI (Proportionnel-Integral classique) du Summit XL
+pour suivre le Spot via AprilTag.
 
-============================================================
-STRUCTURE - DEUX BOUCLES I-P INDEPENDANTES
-============================================================
-LINEAIRE (axe X = devant le Summit) :
-  err_lin       = spot_x - target_distance
-  integral_lin += err_lin * dt   (anti-windup conditionnel)
-  u_lin         = Kp_lin * err_lin + Ki_lin * integral_lin
+- Vise un point projete derriere le Spot dans son axe de marche
+- Si Spot immobile : vise directement le Tag 0 (pas de courbe artificielle)
+- Anti-collision via LiDAR
 
-ANGULAIRE (rotation autour de Z, cible = tag centre dans l'image) :
-  bearing       = atan2(spot_y, spot_x)
-  err_ang       = bearing                (target = 0)
-  integral_ang += err_ang * dt   (anti-windup conditionnel)
-  u_ang         = Kp_ang * err_ang + Ki_ang * integral_ang
-
-COUPLAGE "aligner avant d'avancer" :
-  align_factor = max(0, 1 - |bearing| / bearing_max)
-  u_lin_final  = u_lin * align_factor
-  - bearing = 0     -> align_factor = 1.0 (pleine vitesse linaire)
-  - |bearing| >= bearing_max -> align_factor = 0 (lin coupe)
-  - en zone intermediaire : decroissance lineaire
-
-============================================================
-GAINS - Validation Simulink 
-============================================================
-LINEAIRE  (Td_total = 0.2285 s) :
-  Kp_lin = 1.804
-  Ki_lin = 0.817
-  PM ~ 67 deg, GM ~ 12 dB, settling ~1.5 s, overshoot ~0%
-
-ANGULAIRE (Td_total = 0.292 s) :
-  Kp_ang = 1.6056
-  Ki_ang = 0.6215
-  PM ~ 67 deg, GM ~ 12 dB, settling ~2.0 s, overshoot ~0%
-
-============================================================
-DEADBAND AVEC HYSTERESIS (anti-flickering)
-============================================================
-LINEAIRE  : entree a 3 cm, sortie a 5 cm
-ANGULAIRE : entree a 2 deg, sortie a 3 deg
-Quand on est dans la zone morte : cmd = 0, integ figee.
-
-============================================================
-SECURITE TEST INITIAL
-============================================================
-v_max         = 0.2 m/s   
-w_max         = 0.5 rad/s 
-bearing_max   = 30 deg    (couplage : lin coupe au-dela)
-start_enabled = False     (activer via /ip_enable a la main)
-publish_real_cmd = False  (a basculer manuellement)
 """
 
 import math
+import os
+import yaml
 from typing import Optional
 
 import rclpy
 from rclpy.node import Node
 
 from geometry_msgs.msg import PoseStamped, Twist
+from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Bool, Float64
 
 
-# --------- Topics ---------
 POSE_TOPIC = '/spot_pose_in_summit'
 CMD_DEBUG_TOPIC = '/cmd_vel_debug'
 CMD_REAL_TOPIC = '/summit_xl/robotnik_base_control/cmd_vel'
 ENABLE_TOPIC = '/ip_enable'
+LIDAR_TOPIC = '/summit_xl/front_laser/scan'
 
 ERR_TOPIC = '/ip_debug/error_dist'
 INTEG_TOPIC = '/ip_debug/integral'
@@ -75,68 +33,66 @@ CMD_RAW_TOPIC = '/ip_debug/cmd_raw'
 CMD_SAT_TOPIC = '/ip_debug/cmd_saturated'
 CMD_LIM_TOPIC = '/ip_debug/cmd_rate_limited'
 
+HYSTERESIS_FACTOR = 1.5
+PARAMS_FILE = '/opt/pid_params.yaml'
 
-class IpControllerDebug(Node):
+# Anti-collision LiDAR (non modifiables via IHM)
+COLLISION_DIST_STOP = 0.5       # m
+COLLISION_DIST_SLOW = 0.7       # m
+COLLISION_CONE_DEG = 45.0       # deg
+COLLISION_TIMEOUT = 0.5         # s
+
+DEFAULT_PARAMS = {
+    'target_distance': 1.5,
+    'kp_lin': 1.804,
+    'ki_lin': 0.817,
+    'kp_ang': 1.60555042185557,
+    'ki_ang': 0.621528632958943,
+    'v_max': 0.3,
+    'w_max': 0.5,
+    'max_accel_lin': 1.5,
+    'max_accel_ang': 2.0,
+    'integ_max': 1.5,
+    'integ_ang_max': 1.5,
+    'deadband_lin': 0.03,
+    'deadband_ang': 0.035,
+    'bearing_max': 0.52,
+    'pose_timeout': 0.5,
+    'rate_hz': 20.0,
+    'start_enabled': True,
+    'publish_real_cmd': True,
+    # Pure pursuit
+    'pure_pursuit_enabled': True,
+    'stationary_speed_threshold': 0.1,  # m/s
+}
+
+
+def load_params():
+    if not os.path.exists(PARAMS_FILE):
+        print(f"[PID] Fichier {PARAMS_FILE} absent, utilisation des defauts")
+        return dict(DEFAULT_PARAMS)
+
+    try:
+        with open(PARAMS_FILE, 'r') as f:
+            loaded = yaml.safe_load(f) or {}
+        params = dict(DEFAULT_PARAMS)
+        params.update(loaded)
+        print(f"[PID] Parametres charges depuis {PARAMS_FILE}")
+        return params
+    except Exception as e:
+        print(f"[PID] Erreur lecture {PARAMS_FILE} : {e}. Utilisation des defauts.")
+        return dict(DEFAULT_PARAMS)
+
+
+class PiControllerDebug(Node):
 
     def __init__(self):
         super().__init__('ip_apriltag_debug')
 
-        # ============ Parametres ROS 2 ============
-        self.declare_parameter('target_distance', 1.5)
+        loaded_params = load_params()
+        for name, value in loaded_params.items():
+            self.declare_parameter(name, value)
 
-        # Gains Skogestad SIMC valides Simulink
-        # LINEAIRE : Td_total = 0.2285 s
-        self.declare_parameter('kp_lin', 1.804)
-        self.declare_parameter('ki_lin', 0.817)
-
-        # ANGULAIRE : Td_total = 0.292 s (Td_robot_ang + Td_vision)
-        self.declare_parameter('kp_ang', 1.60555042185557)
-        self.declare_parameter('ki_ang', 0.621528632958943)
-
-        # Saturation REDUITE pour test
-        self.declare_parameter('v_max', 0.2)              # m/s (test prudent)
-        self.declare_parameter('w_max', 0.4)              # rad/s (~28 deg/s)
-
-        # Rate limiter coherent avec v_max reduit
-        self.declare_parameter('rising_accel', 1.5)       # m/s^2
-        self.declare_parameter('falling_accel', 2.0)      # m/s^2
-        self.declare_parameter('rising_alpha', 2.0)       # rad/s^2 (angulaire)
-        self.declare_parameter('falling_alpha', 2.5)      # rad/s^2
-
-        # Anti-windup
-        self.declare_parameter('integ_max', 1.5)
-        self.declare_parameter('integ_ang_max', 1.5)
-
-        # ----------- Deadband avec hysteresis (LINEAIRE) -----------
-        # Quand |err| < deadband_enter, on entre dans la zone morte (cmd=0)
-        # Pour en sortir, il faut |err| > deadband_exit (hysteresis)
-        # Evite le flickering aux bords et l'usure moteur sur le bruit AprilTag.
-        self.declare_parameter('deadband_enter', 0.03)  # 3 cm
-        self.declare_parameter('deadband_exit', 0.05)   # 5 cm
-
-        # ----------- Deadband ANGULAIRE -----------
-        # 2 deg / 3 deg en hysteresis
-        self.declare_parameter('deadband_ang_enter', 0.035)  # ~2 deg
-        self.declare_parameter('deadband_ang_exit', 0.052)   # ~3 deg
-
-        # ----------- Couplage lineaire / angulaire -----------
-        # Si |bearing| > bearing_max, le lineaire est completement coupe
-        # (priorite : aligner avant d'avancer)
-        # Facteur lineaire = max(0, 1 - |bearing| / bearing_max)
-        self.declare_parameter('bearing_max', 0.79)  # ~45 deg
-
-        # ----------- Securite -----------
-        self.declare_parameter('pose_timeout', 0.5)
-        self.declare_parameter('rate_hz', 20.0)
-
-        # IMPORTANT : demarre DESACTIVE pour activer via /ip_enable a la main
-        self.declare_parameter('start_enabled', False)
-
-        # IMPORTANT : ne publie PAS la vraie commande par defaut
-        # A basculer a True via ros2 param set quand on est pret
-        self.declare_parameter('publish_real_cmd', False)
-
-        # ============ Etat interne ============
         self.last_pose: Optional[PoseStamped] = None
         self.last_pose_time: Optional[rclpy.time.Time] = None
 
@@ -147,17 +103,27 @@ class IpControllerDebug(Node):
         self.last_cmd_lin = 0.0
         self.last_cmd_ang = 0.0
 
-        # Etat de la deadband (hysteresis)
-        # True quand on est dans la zone morte (a la cible)
         self.in_deadband = False
         self.in_deadband_ang = False
+
+        # Anti-collision : etat interne
+        self.last_scan: Optional[LaserScan] = None
+        self.last_scan_time: Optional[rclpy.time.Time] = None
+        self.min_dist_front = float('inf')
+
+        # Pure pursuit : etat pour estimation vitesse Spot
+        self.prev_spot_x = None
+        self.prev_spot_y = None
+        self.prev_pose_time = None
+        self.spot_speed_ema = 0.0
+        self.is_pursuing = False  # Etat courant : True si en mode pure pursuit
 
         self.enabled = bool(self.get_parameter('start_enabled').value)
         self.publish_real = bool(self.get_parameter('publish_real_cmd').value)
 
-        # ============ I/O ============
         self.create_subscription(PoseStamped, POSE_TOPIC, self.on_pose, 10)
         self.create_subscription(Bool, ENABLE_TOPIC, self.on_enable, 10)
+        self.create_subscription(LaserScan, LIDAR_TOPIC, self.on_scan, 10)
 
         self.pub_cmd_debug = self.create_publisher(Twist, CMD_DEBUG_TOPIC, 10)
         self.pub_cmd_real = self.create_publisher(Twist, CMD_REAL_TOPIC, 10)
@@ -172,43 +138,21 @@ class IpControllerDebug(Node):
         self.create_timer(1.0 / rate, self.tick)
         self.create_timer(1.0, self._log_stats)
 
-        # Banner
         kp_lin = self.get_parameter('kp_lin').value
         ki_lin = self.get_parameter('ki_lin').value
-        kp_ang = self.get_parameter('kp_ang').value
-        ki_ang = self.get_parameter('ki_ang').value
         target = self.get_parameter('target_distance').value
-        v_max = self.get_parameter('v_max').value
-        w_max = self.get_parameter('w_max').value
-        db_enter = self.get_parameter('deadband_enter').value
-        db_exit = self.get_parameter('deadband_exit').value
-        bearing_max = self.get_parameter('bearing_max').value
+        pp_enabled = self.get_parameter('pure_pursuit_enabled').value
         self.get_logger().info("=" * 70)
-        self.get_logger().info("PI/IP Controller LIN + ANG - TEST BOUCLE FERMEE")
-        self.get_logger().info(f"  Cible distance     : {target:.2f} m (regule sur spot_x)")
-        self.get_logger().info(f"  Cible angulaire    : 0 rad (tag centre dans l'image)")
+        self.get_logger().info("PI Controller LIN + ANG (V7 - pure pursuit)")
+        self.get_logger().info(f"  Cible distance     : {target:.2f} m")
         self.get_logger().info(f"  Gains LIN          : Kp = {kp_lin:.4f}, Ki = {ki_lin:.4f}")
-        self.get_logger().info(f"  Gains ANG          : Kp = {kp_ang:.4f}, Ki = {ki_ang:.4f}")
-        self.get_logger().info(f"  Vitesse max        : +/- {v_max} m/s, +/- {w_max} rad/s")
-        self.get_logger().info(f"  Deadband LIN       : {db_enter*100:.0f} cm / {db_exit*100:.0f} cm")
-        self.get_logger().info(f"  Couplage           : lin coupe si |bearing| > {math.degrees(bearing_max):.0f} deg")
-        self.get_logger().info(f"  Etat initial       : {'ENABLED' if self.enabled else 'DISABLED (active via /ip_enable)'}")
+        self.get_logger().info(f"  Pure pursuit       : {'ENABLED' if pp_enabled else 'DISABLED'}")
+        self.get_logger().info(f"  Anti-collision     : stop < {COLLISION_DIST_STOP}m, slow < {COLLISION_DIST_SLOW}m")
+        self.get_logger().info(f"  Cone avant         : +/- {COLLISION_CONE_DEG} deg")
+        self.get_logger().info(f"  Etat initial       : {'ENABLED' if self.enabled else 'DISABLED'}")
         if self.publish_real:
-            self.get_logger().warn("=" * 70)
             self.get_logger().warn("  /!\\ publish_real_cmd = True /!\\")
-            self.get_logger().warn("  LE ROBOT VA BOUGER QUAND TU ACTIVERAS /ip_enable !")
-            self.get_logger().warn(f"  Topic reel : {CMD_REAL_TOPIC}")
-            self.get_logger().warn("  Verifie l'espace libre et l'acces a l'E-stop")
-            self.get_logger().warn("=" * 70)
-        else:
-            self.get_logger().info("  Mode DEBUG : pas de cmd envoyee au vrai robot")
-            self.get_logger().info("  Pour activer : ros2 param set /ip_apriltag_debug publish_real_cmd true")
         self.get_logger().info("=" * 70)
-        self.get_logger().info("Pour activer la regulation : ros2 topic pub /ip_enable std_msgs/Bool 'data: true' --once")
-        self.get_logger().info("Pour la desactiver         : ros2 topic pub /ip_enable std_msgs/Bool 'data: false' --once")
-        self.get_logger().info("=" * 70)
-
-    # ============ Callbacks ============
 
     def on_pose(self, msg: PoseStamped):
         self.last_pose = msg
@@ -225,16 +169,82 @@ class IpControllerDebug(Node):
                 self.in_deadband = False
                 self.in_deadband_ang = False
                 self.last_tick_time = None
+                # Reset estimation vitesse
+                self.prev_spot_x = None
+                self.prev_spot_y = None
+                self.prev_pose_time = None
+                self.spot_speed_ema = 0.0
             else:
                 self.get_logger().info(">>> CONTROLEUR DESACTIVE")
                 self._publish_zero()
                 self.last_cmd_lin = 0.0
                 self.last_cmd_ang = 0.0
 
-    # ============ Boucle principale ============
+    def on_scan(self, msg: LaserScan):
+        """Callback LiDAR : calcule la distance min dans le cone avant."""
+        self.last_scan = msg
+        self.last_scan_time = self.get_clock().now()
+
+        cone_rad = math.radians(COLLISION_CONE_DEG)
+        n = len(msg.ranges)
+        if n == 0:
+            self.min_dist_front = float('inf')
+            return
+
+        min_dist = float('inf')
+        for i, r in enumerate(msg.ranges):
+            if r < msg.range_min or r > msg.range_max or math.isinf(r) or math.isnan(r):
+                continue
+            angle = msg.angle_min + i * msg.angle_increment
+            if -cone_rad <= angle <= cone_rad:
+                if r < min_dist:
+                    min_dist = r
+        self.min_dist_front = min_dist
+
+    def _apply_anti_collision(self, v_lin):
+        """Ralentit/arrete si obstacle devant. Recul non protege."""
+        now = self.get_clock().now()
+        if self.last_scan_time is None:
+            self.get_logger().warn("Pas de scan LiDAR recu, freinage par securite",
+                                   throttle_duration_sec=5.0)
+            return 0.0
+        age = (now - self.last_scan_time).nanoseconds * 1e-9
+        if age > COLLISION_TIMEOUT:
+            self.get_logger().warn(f"Scan LiDAR obsolete ({age:.1f}s), freinage",
+                                   throttle_duration_sec=2.0)
+            return 0.0
+
+        if v_lin <= 0:
+            return v_lin
+
+        dist = self.min_dist_front
+
+        if dist <= COLLISION_DIST_STOP:
+            self.get_logger().warn(f"Obstacle a {dist:.2f}m : ARRET",
+                                   throttle_duration_sec=1.0)
+            return 0.0
+        elif dist <= COLLISION_DIST_SLOW:
+            factor = (dist - COLLISION_DIST_STOP) / (COLLISION_DIST_SLOW - COLLISION_DIST_STOP)
+            return v_lin * factor
+        else:
+            return v_lin
+
+    def _update_spot_speed(self, spot_x, spot_y):
+        """Met a jour l'estimation EMA de la vitesse du Spot."""
+        if self.prev_spot_x is not None and self.prev_pose_time is not None:
+            dt_pose = (self.last_pose_time - self.prev_pose_time).nanoseconds * 1e-9
+            if dt_pose > 0.001:
+                dx = spot_x - self.prev_spot_x
+                dy = spot_y - self.prev_spot_y
+                instant_speed = math.sqrt(dx * dx + dy * dy) / dt_pose
+                # EMA alpha=0.3 : lisse fort le bruit
+                self.spot_speed_ema = 0.7 * self.spot_speed_ema + 0.3 * instant_speed
+
+        self.prev_spot_x = spot_x
+        self.prev_spot_y = spot_y
+        self.prev_pose_time = self.last_pose_time
 
     def tick(self):
-        # Lecture des parametres (peuvent changer dynamiquement)
         self.publish_real = bool(self.get_parameter('publish_real_cmd').value)
 
         if not self.enabled:
@@ -242,14 +252,12 @@ class IpControllerDebug(Node):
 
         now = self.get_clock().now()
 
-        # dt
         if self.last_tick_time is None:
             dt = 1.0 / float(self.get_parameter('rate_hz').value)
         else:
             dt = (now - self.last_tick_time).nanoseconds * 1e-9
             dt = max(0.001, min(0.5, dt))
 
-        # Timeout pose : si plus de pose recue -> freinage
         timeout = float(self.get_parameter('pose_timeout').value)
         pose_stale = (
             self.last_pose is None
@@ -258,29 +266,55 @@ class IpControllerDebug(Node):
         )
 
         if pose_stale:
-            self.get_logger().warn(
-                "Pose obsolete, freinage vers 0",
-                throttle_duration_sec=2.0)
-            u_lin_final = self._apply_rate_limit(0.0, self.last_cmd_lin, dt)
-            self._publish_cmd(u_lin_final, 0.0)
+            self.get_logger().warn("Pose obsolete, freinage vers 0",
+                                   throttle_duration_sec=2.0)
+            u_lin_final = self._apply_rate_limit_lin(0.0, self.last_cmd_lin, dt)
+            u_ang_final = self._apply_rate_limit_ang(0.0, self.last_cmd_ang, dt)
+            self._publish_cmd(u_lin_final, u_ang_final)
             self.last_tick_time = now
             return
 
-        # ============ Mesure ============
         spot_x = self.last_pose.pose.position.x
         spot_y = self.last_pose.pose.position.y
 
-        # ============ Erreurs ============
+        # Estimation vitesse du Spot (pour differencier mobile/immobile)
+        self._update_spot_speed(spot_x, spot_y)
+
+        # Extraction yaw du Tag 0 depuis le quaternion
+        q = self.last_pose.pose.orientation
+        spot_yaw = math.atan2(
+            2 * (q.w * q.z + q.x * q.y),
+            1 - 2 * (q.y * q.y + q.z * q.z)
+        )
+
         target_dist = float(self.get_parameter('target_distance').value)
-        # err_lin > 0 si Spot trop loin (le Summit doit AVANCER pour se rapprocher)
-        err_lin = spot_x - target_dist
+        pure_pursuit_enabled = bool(self.get_parameter('pure_pursuit_enabled').value)
+        speed_threshold = float(self.get_parameter('stationary_speed_threshold').value)
 
-        # err_ang > 0 si Spot est a gauche (atan2 retourne positif a gauche)
-        # On veut que le Summit TOURNE A GAUCHE (omega > 0) -> signe positif OK
-        bearing = math.atan2(spot_y, spot_x)
-        err_ang = bearing  # target = 0 (tag centre)
+        # ========== Calcul du point cible ==========
+        # Convention Tag 0 : face regarde vers l'arriere du Spot (queue).
+        # spot_yaw est l'orientation de la normale du Tag 0 dans le repere Summit.
+        # Le Spot avance dans la direction OPPOSEE (spot_yaw + pi).
+        # Point cible "derriere le Spot dans son sens de marche" =
+        # position Tag 0 + target_dist dans la direction OU regarde le Tag 0.
+        self.is_pursuing = (pure_pursuit_enabled
+                            and self.spot_speed_ema > speed_threshold)
 
-        # ============ Gains ============
+        if self.is_pursuing:
+            # Spot mobile : viser un point projete derriere le Spot
+            target_point_x = spot_x + target_dist * math.cos(spot_yaw)
+            target_point_y = spot_y + target_dist * math.sin(spot_yaw)
+            # Erreur = distance au point cible
+            err_lin = math.sqrt(target_point_x ** 2 + target_point_y ** 2)
+            bearing = math.atan2(target_point_y, target_point_x)
+        else:
+            # Spot immobile : viser le Tag 0 directement (comportement classique)
+            err_lin = spot_x - target_dist
+            bearing = math.atan2(spot_y, spot_x)
+
+        err_ang = bearing
+
+        # ========== Gains et parametres ==========
         kp_lin = float(self.get_parameter('kp_lin').value)
         ki_lin = float(self.get_parameter('ki_lin').value)
         kp_ang = float(self.get_parameter('kp_ang').value)
@@ -289,86 +323,65 @@ class IpControllerDebug(Node):
         w_max = float(self.get_parameter('w_max').value)
         integ_max = float(self.get_parameter('integ_max').value)
         integ_ang_max = float(self.get_parameter('integ_ang_max').value)
-        db_enter = float(self.get_parameter('deadband_enter').value)
-        db_exit = float(self.get_parameter('deadband_exit').value)
-        db_ang_enter = float(self.get_parameter('deadband_ang_enter').value)
-        db_ang_exit = float(self.get_parameter('deadband_ang_exit').value)
+
+        db_lin_enter = float(self.get_parameter('deadband_lin').value)
+        db_lin_exit = db_lin_enter * HYSTERESIS_FACTOR
+        db_ang_enter = float(self.get_parameter('deadband_ang').value)
+        db_ang_exit = db_ang_enter * HYSTERESIS_FACTOR
         bearing_max = float(self.get_parameter('bearing_max').value)
 
-        # ============ Deadband LINEAIRE avec hysteresis ============
+        # ========== Deadband + hysteresis ==========
         abs_err_lin = abs(err_lin)
-        if not self.in_deadband and abs_err_lin < db_enter:
+        if not self.in_deadband and abs_err_lin < db_lin_enter:
             self.in_deadband = True
-            self.get_logger().info(
-                f"Entree deadband LIN (err={err_lin*100:+.1f}cm < {db_enter*100:.0f}cm)",
-                throttle_duration_sec=1.0)
-        elif self.in_deadband and abs_err_lin > db_exit:
+        elif self.in_deadband and abs_err_lin > db_lin_exit:
             self.in_deadband = False
-            self.get_logger().info(
-                f"Sortie deadband LIN (err={err_lin*100:+.1f}cm > {db_exit*100:.0f}cm)",
-                throttle_duration_sec=1.0)
 
-        # ============ Deadband ANGULAIRE avec hysteresis ============
         abs_err_ang = abs(err_ang)
         if not self.in_deadband_ang and abs_err_ang < db_ang_enter:
             self.in_deadband_ang = True
-            self.get_logger().info(
-                f"Entree deadband ANG (err={math.degrees(err_ang):+.1f}deg)",
-                throttle_duration_sec=1.0)
         elif self.in_deadband_ang and abs_err_ang > db_ang_exit:
             self.in_deadband_ang = False
-            self.get_logger().info(
-                f"Sortie deadband ANG (err={math.degrees(err_ang):+.1f}deg)",
-                throttle_duration_sec=1.0)
 
-        # ============ Loi de commande LINEAIRE (IP sur l'erreur) ============
+        # ========== PI lineaire ==========
         if self.in_deadband:
             u_lin_raw = 0.0
             u_lin_sat = 0.0
         else:
             u_test = kp_lin * err_lin + ki_lin * self.integral_err
-
             saturate_high = u_test >= v_max and err_lin > 0
             saturate_low = u_test <= -v_max and err_lin < 0
-
             if not (saturate_high or saturate_low):
                 self.integral_err += err_lin * dt
-
             self.integral_err = max(-integ_max, min(integ_max, self.integral_err))
-
             u_lin_raw = kp_lin * err_lin + ki_lin * self.integral_err
             u_lin_sat = max(-v_max, min(v_max, u_lin_raw))
 
-        # ============ Loi de commande ANGULAIRE (IP sur l'erreur) ============
+        # ========== PI angulaire ==========
         if self.in_deadband_ang:
             u_ang_raw = 0.0
             u_ang_sat = 0.0
         else:
             u_test_ang = kp_ang * err_ang + ki_ang * self.integral_ang
-
             saturate_high_ang = u_test_ang >= w_max and err_ang > 0
             saturate_low_ang = u_test_ang <= -w_max and err_ang < 0
-
             if not (saturate_high_ang or saturate_low_ang):
                 self.integral_ang += err_ang * dt
-
             self.integral_ang = max(-integ_ang_max, min(integ_ang_max, self.integral_ang))
-
             u_ang_raw = kp_ang * err_ang + ki_ang * self.integral_ang
             u_ang_sat = max(-w_max, min(w_max, u_ang_raw))
 
-        # ============ Couplage : reduire le lineaire si bearing grand ============
-        # factor = 1 quand bearing=0 (tag centre)
-        # factor = 0 quand |bearing| >= bearing_max (tag tres decale)
-        # En zone intermediaire, decroissance lineaire
+        # ========== Couplage lineaire/angulaire ==========
         align_factor = max(0.0, 1.0 - abs(bearing) / bearing_max)
         u_lin_coupled = u_lin_sat * align_factor
 
-        # ============ Rate limiter ============
-        u_lin_final = self._apply_rate_limit(u_lin_coupled, self.last_cmd_lin, dt)
+        # ========== Anti-collision AVANT rate limiter ==========
+        u_lin_coupled = self._apply_anti_collision(u_lin_coupled)
+
+        # ========== Rate limiter ==========
+        u_lin_final = self._apply_rate_limit_lin(u_lin_coupled, self.last_cmd_lin, dt)
         u_ang_final = self._apply_rate_limit_ang(u_ang_sat, self.last_cmd_ang, dt)
 
-        # ============ Publication ============
         self._publish_cmd(u_lin_final, u_ang_final)
 
         self._publish_float(self.pub_err, err_lin)
@@ -379,21 +392,17 @@ class IpControllerDebug(Node):
 
         self.last_tick_time = now
 
-    # ============ Helpers ============
-
-    def _apply_rate_limit(self, target, last, dt):
-        rising = float(self.get_parameter('rising_accel').value)
-        falling = float(self.get_parameter('falling_accel').value)
+    def _apply_rate_limit_lin(self, target, last, dt):
+        max_accel = float(self.get_parameter('max_accel_lin').value)
+        max_delta = max_accel * dt
         delta = target - last
-        max_delta = rising * dt if delta > 0 else falling * dt
         delta = max(-max_delta, min(max_delta, delta))
         return last + delta
 
     def _apply_rate_limit_ang(self, target, last, dt):
-        rising = float(self.get_parameter('rising_alpha').value)
-        falling = float(self.get_parameter('falling_alpha').value)
+        max_accel = float(self.get_parameter('max_accel_ang').value)
+        max_delta = max_accel * dt
         delta = target - last
-        max_delta = rising * dt if delta > 0 else falling * dt
         delta = max(-max_delta, min(max_delta, delta))
         return last + delta
 
@@ -401,14 +410,9 @@ class IpControllerDebug(Node):
         cmd = Twist()
         cmd.linear.x = float(v_lin)
         cmd.angular.z = float(v_ang)
-
-        # Toujours publier sur le topic debug
         self.pub_cmd_debug.publish(cmd)
-
-        # Publier sur le vrai topic SEULEMENT si publish_real est True
         if self.publish_real:
             self.pub_cmd_real.publish(cmd)
-
         self.last_cmd_lin = v_lin
         self.last_cmd_ang = v_ang
 
@@ -442,17 +446,25 @@ class IpControllerDebug(Node):
         mode = "REAL" if self.publish_real else "DEBUG"
         db_lin = "DB" if self.in_deadband else "  "
         db_ang = "DB" if self.in_deadband_ang else "  "
+        pp_str = "PP" if self.is_pursuing else "  "
+
+        if math.isinf(self.min_dist_front):
+            coll_str = "coll=INF"
+        else:
+            coll_str = f"coll={self.min_dist_front:.2f}m"
 
         self.get_logger().info(
             f"[STATS-{mode}] spot_x={spot_x:.2f}m err={err:+.2f} [{db_lin}] | "
             f"bearing={bearing_deg:+5.1f}deg [{db_ang}] | "
+            f"speed={self.spot_speed_ema:.2f}m/s [{pp_str}] | "
             f"integ=({self.integral_err:+.2f},{self.integral_ang:+.2f}) | "
-            f"cmd=(lin={self.last_cmd_lin:+.2f}m/s ang={self.last_cmd_ang:+.2f}rad/s)")
+            f"cmd=(lin={self.last_cmd_lin:+.2f}m/s ang={self.last_cmd_ang:+.2f}rad/s) | "
+            f"{coll_str}")
 
 
 def main():
     rclpy.init()
-    node = IpControllerDebug()
+    node = PiControllerDebug()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

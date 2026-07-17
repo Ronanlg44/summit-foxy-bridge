@@ -1,0 +1,62 @@
+from launch import LaunchDescription
+from launch_ros.actions import Node
+
+
+def generate_launch_description():
+    return LaunchDescription([
+
+        # Tag 0 est la reference : sur la queue du Spot, face regarde vers l'arriere
+        # Repere du Tag 0 (convention ROS) :
+        #   +X = normal a la face (vers l'arriere du Spot physique)
+        #   +Y = a gauche vu depuis le Tag 0 (donc a droite du Spot physique)
+        #   +Z = vers le haut
+
+        # Tag 1 - patte arriere gauche du Spot (face vers +Y du Spot)
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='tf_tag0_tag1',
+            arguments=[
+                '-0.039', '-0.220', '-0.036',
+                '-1.5708', '0', '0',
+                'tag_0_link', 'tag_1_link',
+            ],
+            output='screen',
+        ),
+        # Tag 2 - patte arriere droite du Spot (face vers -Y du Spot)
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='tf_tag0_tag2',
+            arguments=[
+                '-0.039', '0.220', '-0.036',
+                '1.5708', '0', '0',
+                'tag_0_link', 'tag_2_link',
+            ],
+            output='screen',
+        ),
+        # Tag 3 - patte avant gauche du Spot
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='tf_tag0_tag3',
+            arguments=[
+                '-0.639', '-0.220', '-0.037',
+                '-1.5708', '0', '0',
+                'tag_0_link', 'tag_3_link',
+            ],
+            output='screen',
+        ),
+        # Tag 4 - patte avant droite du Spot
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='tf_tag0_tag4',
+            arguments=[
+                '-0.639', '0.220', '-0.037',
+                '1.5708', '0', '0',
+                'tag_0_link', 'tag_4_link',
+            ],
+            output='screen',
+        ),
+    ])

@@ -151,9 +151,9 @@ launch_in_window "tf_static" "docker compose -f $COMPOSE_FILE run --rm tf_static
 sleep 3
 
 # ----- 3. perception_supervisor (AVANT bridge) -----
-echo "[launch] [3/9] perception_supervisor (AVANT bridge, ordre critique)..."
-launch_in_window "supervisor" "docker compose -f $COMPOSE_FILE run --rm perception_supervisor"
-sleep 5
+#echo "[launch] [3/9] perception_supervisor (AVANT bridge, ordre critique)..."
+#launch_in_window "supervisor" "docker compose -f $COMPOSE_FILE run --rm perception_supervisor"
+#sleep 5
 
 # ----- 4. bridge -----
 echo "[launch] [4/9] bridge (parameter_bridge vers Summit)..."
@@ -177,9 +177,9 @@ launch_in_window "pose_fuser" "docker compose -f $COMPOSE_FILE run --rm pose_fus
 sleep 3
 
 # ----- 8. yolo_detector -----
-echo "[launch] [8/9] yolo_detector (YOLOv8m + ByteTrack)..."
-launch_in_window "yolo" "docker compose -f $COMPOSE_FILE run --rm yolo_detector"
-sleep 3
+#echo "[launch] [8/9] yolo_detector (YOLOv8m + ByteTrack)..."
+#launch_in_window "yolo" "docker compose -f $COMPOSE_FILE run --rm yolo_detector"
+#sleep 3
 
 # ----- 9. PID ou step_input selon mode -----
 case "$MODE" in
@@ -194,7 +194,7 @@ case "$MODE" in
 esac
 
 # ----- Shell utilitaire en bonus pour debug/bagging -----
-launch_in_window "shell" "docker compose -f $COMPOSE_FILE run --rm shell"
+#launch_in_window "shell" "docker compose -f $COMPOSE_FILE run --rm shell"
 
 # ----------------------------------------------------------------------
 # Resume

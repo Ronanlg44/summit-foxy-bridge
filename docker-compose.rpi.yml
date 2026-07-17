@@ -69,8 +69,8 @@ services:
          ros2 launch realsense2_camera rs_launch.py
            align_depth.enable:=true
            pointcloud.enable:=false
-           depth_module.profile:=640x480x30
-           rgb_camera.profile:=640x480x30
+           depth_module.profile:=424x240x30
+           rgb_camera.profile:=424x240x30
            initial_reset:=true
          2>&1 | grep -v 'compressed_depth_image_transport'"
     profiles: ["tools"]
@@ -109,7 +109,7 @@ services:
       - ./cyclonedds.rpi.xml:/opt/cyclonedds.xml:ro
     entrypoint: ["/bin/bash", "-lc"]
     command:
-      - "source /opt/ros/foxy/setup.bash && source /opt/apriltag_ws/install/setup.bash && ros2 launch apriltag_ros tag_realsense.launch.py camera_name:=/camera/color image_topic:=image_raw image_transport:=compressed"
+      - "source /opt/ros/foxy/setup.bash && source /opt/apriltag_ws/install/setup.bash && ros2 launch apriltag_ros tag_realsense.launch.py camera_name:=/camera/color image_topic:=image_raw image_transport:=raw"
     profiles: ["tools"]
 
   # ===================================================================
@@ -242,13 +242,14 @@ services:
     volumes:
       - ./control/pid_apriltag:/opt/pid_ws/src/pid_apriltag:rw
       - ./cyclonedds.rpi.xml:/opt/cyclonedds.xml:ro
+      - ./control/pid_apriltag/pid_params.yaml:/opt/pid_params.yaml:rw
     entrypoint: ["/bin/bash", "-lc"]
     command:
       - "source /opt/ros/foxy/setup.bash &&
          cd /opt/pid_ws &&
          colcon build --packages-select pid_apriltag --symlink-install &&
          source install/setup.bash &&
-         ros2 run pid_apriltag pid_apriltag"
+         ros2 run pid_apriltag pid_apriltag_with_ws"
     profiles: ["tools"]
 
   # ===================================================================

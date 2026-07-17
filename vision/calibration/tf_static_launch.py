@@ -1,16 +1,25 @@
 """
 Launch file pour publier les TF statiques de calibration extrinseque.
 
-Publie 5 transformations :
-- summit_xl_base_link -> camera_link              (D435i sur Summit, CAO OnShape)
-- summit_xl_base_link -> summit_xl_front_laser_link (LiDAR Hokuyo sur Summit, CAO)
-- spot_base_link -> tag_0_link                    (tag arriere du Spot)
-- spot_base_link -> tag_1_link                    (tag flanc gauche du Spot)
-- spot_base_link -> tag_2_link                    (tag flanc droit du Spot)
+Tag 0 (arrière du Spot) est la reference.
+Les 4 autres tags sont sur les pattes du Spot, positionnes relativement au Tag 0.
+Repere du Tag 0 (convention ROS) :
+  +X = normal a la face (vers l'arriere du Spot physique)
+  +Y = a gauche vu depuis le Tag 0 (donc a droite du Spot physique)
+  +Z = vers le haut
+
+Publie 6 transformations :
+- summit_xl_base_link -> camera_link                (D435i sur Summit)
+- summit_xl_base_link -> summit_xl_front_laser_link (LiDAR Hokuyo)
+- dock_frame_0 -> dock_frame_1 (patte arriere gauche)
+- dock_frame_0 -> dock_frame_2 (patte arriere droite)
+- dock_frame_0 -> dock_frame_3 (patte avant gauche)
+- dock_frame_0 -> dock_frame_4 (patte avant droite)
 
 Convention static_transform_publisher en ROS 2 :
   arguments = [x, y, z, yaw, pitch, roll, parent_frame, child_frame]
 """
+
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
@@ -25,14 +34,13 @@ def generate_launch_description():
             name='tf_summit_camera',
             arguments=[
                 '0.068', '0.000', '0.190',
-                '0', '0', '0',                  # parallele au sol
+                '0', '0', '0',
                 'summit_xl_base_link', 'camera_link',
             ],
             output='screen',
         ),
 
         # Pose du LiDAR Hokuyo sur le Summit XL HL (mesure CAO OnShape)
-        # Publiee ici en TRANSIENT_LOCAL pour contourner le bug QoS du bridge.
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
@@ -45,41 +53,54 @@ def generate_launch_description():
             output='screen',
         ),
 
-        # Tag 0 - arriere du Spot (face vers -X)
+        # Tag 1 - patte arriere gauche du Spot
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
-            name='tf_spot_tag_0',
+            name='tf_tag0_tag1',
             arguments=[
-                '-0.43', '0.00', '0.01',
-                '3.14159', '0', '0',         # yaw=pi, pitch=0, roll=0
-                'spot_base_link', 'tag_0_link',
+                '-0.039', '-0.220', '-0.036',
+                '-1.5708', '0', '0',
+                'dock_frame_0', 'dock_frame_1',
             ],
             output='screen',
         ),
 
-        # Tag 1 - flanc gauche du Spot (face vers +Y)
+        # Tag 2 - patte arriere droite du Spot
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
-            name='tf_spot_tag_1',
+            name='tf_tag0_tag2',
             arguments=[
-                '0.00', '0.12', '0.01',
-                '1.5708', '0', '0',          # yaw=pi/2, pitch=0, roll=0
-                'spot_base_link', 'tag_1_link',
+                '-0.039', '0.220', '-0.036',
+                '1.5708', '0', '0',
+                'dock_frame_0', 'dock_frame_2',
             ],
             output='screen',
         ),
 
-        # Tag 2 - flanc droit du Spot (face vers -Y)
+        # Tag 3 - patte avant gauche du Spot
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
-            name='tf_spot_tag_2',
+            name='tf_tag0_tag3',
             arguments=[
-                '0.00', '-0.12', '0.01',
-                '-1.5708', '0', '0',         # yaw=-pi/2, pitch=0, roll=0
-                'spot_base_link', 'tag_2_link',
+                '-0.639', '-0.220', '-0.037',
+                '-1.5708', '0', '0',
+                'dock_frame_0', 'dock_frame_3',
+            ],
+            output='screen',
+        ),
+
+        # Tag 4 - patte avant droite du Spot
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='tf_tag0_tag4',
+            arguments=[
+                '-0.639', '0.220', '-0.037',
+                '1.5708', '0', '0',
+                'dock_frame_0', 'dock_frame_4',
             ],
             output='screen',
         ),
