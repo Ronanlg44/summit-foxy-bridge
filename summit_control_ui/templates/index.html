@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Summit Control UI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+   <header>
+      <div class="header-left">
+         <h1> Interface de Contrôle Summit XL <span class="header-subtitle">Projet FILDARIANE — Ronan Le Guenne </span></h1>
+      </div>
+      <div class="header-right">
+          <div class="rpi-info">Connecté à <b>{{ rpi_user }}@{{ rpi_host }}</b></div>
+          <div class="header-indicators">
+              <div class="ws-status" id="ws-status">WS: —</div>
+              <div class="signal-status" id="signal-status">Signal: —</div>
+          </div>
+      </div>
+   </header>
+   <main>
+      <div class="row-middle">
+         <div class="left-column">
+            <section class="card mission">
+               <h2>Gestion Mission</h2>
+               <div class="button-row">
+                  <button class="btn btn-big btn-green" data-action="mission/mission">LANCER MISSION</button>
+                  <button class="btn btn-big btn-red always-active" data-action="mission/stop">STOPPER MISSION</button>
+                  <button class="btn btn-big" data-action="mission/status">STATUS</button>
+                  <button class="btn btn-big btn-orange" data-action="reboot">REBOOT RPi4</button>
+               </div>
+            </section>
+            <section class="card status">
+               <h2>Etat systeme RPi4</h2>
+               <div class="status-grid">
+                  <div class="status-item"><span class="status-label">Temperature CPU</span><span class="status-value" id="cpu-temp">—</span></div>
+                  <div class="status-item"><span class="status-label">Charge CPU (1min)</span><span class="status-value" id="load">—</span></div>
+                  <div class="status-item"><span class="status-label">RAM</span><span class="status-value" id="mem">—</span></div>
+                  <div class="status-item"><span class="status-label">Disque</span><span class="status-value" id="disk">—</span></div>
+                  <div class="status-item"><span class="status-label">Session tmux</span><span class="status-value" id="tmux">—</span></div>
+               </div>
+               <h3>Containers Docker actifs</h3>
+               <ul id="containers" class="containers-list">
+                   <li class="empty">Aucun.</li>
+               </ul>
+            </section>
+         </div>
+         <section class="card console">
+            <h2>Logs console</h2>
+            <div id="console" class="console-box"></div>
+         </section>
+      </div>
+      <section class="card mission-tracking">
+         <h2>Détection de la cible</h2>
+         <div class="status-grid">
+            <div class="status-item"><span class="status-label">Detecte</span><span class="status-value" id="spot-detected">—</span></div>
+            <div class="status-item"><span class="status-label">Distance</span><span class="status-value" id="spot-distance">—</span></div>
+            <div class="status-item"><span class="status-label">Angle (bearing)</span><span class="status-value" id="spot-bearing">—</span></div>
+            <div class="status-item"><span class="status-label">Position X / Y</span><span class="status-value" id="spot-xy">—</span></div>
+         </div>
+      </section>
+      <section class="card pid-params" id="pid-params-card">
+         <h2>Parametres PID</h2>
+         <div class="emergency-row">
+            <button class="btn btn-emergency always-active" id="btn-emergency" disabled>ARRET D'URGENCE</button>
+            <button class="btn btn-big btn-green" id="btn-activate-pid" disabled>REACTIVER PID </button>
+            <button class="btn btn-big btn-blue" id="btn-save-params" disabled>SAUVEGARDER</button>
+            <button class="btn btn-big" id="btn-reload-params" disabled>Recharger fichier</button>
+         </div>
+         <div class="params-grid" id="params-grid">
+          </div>
+      </section>
+   </main>
+   <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

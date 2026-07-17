@@ -1,0 +1,57 @@
+# Configuration de l'IHM Summit Control
+# Adapte ces valeurs selon ton reseau et ton install RPi4
+
+rpi:
+  host: "192.168.0.50"           # IP de la RPi4 sur le reseau Summit
+  user: "summit"                  # user SSH
+  workdir: "/home/summit/summit-foxy-bridge"  # ou est le repo sur la RPi4
+  compose_file: "docker-compose.rpi.yml"
+  launch_script: "./launch_all.rpi.sh"
+  tmux_session: "summit_rpi"     # nom de la session tmux du launch_all
+
+# Port du serveur web local
+web:
+  host: "127.0.0.1"               # localhost seulement (securite)
+  port: 8080
+
+# Frequence de rafraichissement du status systeme (secondes)
+polling:
+  status_interval: 5.0
+
+# Liste des services docker compose (correspond au docker-compose.rpi.yml)
+services:
+  - name: "realsense"
+    label: "Camera D435i"
+    critical: true
+  - name: "tf_static"
+    label: "TF Static (calibration)"
+    critical: true
+  - name: "perception_supervisor"
+    label: "Perception Supervisor"
+    critical: true
+  - name: "bridge"
+    label: "Bridge ROS 1<->2"
+    critical: true
+  - name: "apriltag"
+    label: "AprilTag Detection"
+    critical: true
+  - name: "refiner"
+    label: "Depth Refiner"
+    critical: false
+  - name: "pose_fuser"
+    label: "Pose Fuser"
+    critical: true
+  - name: "yolo_detector"
+    label: "YOLO Detector"
+    critical: false
+  - name: "pid_apriltag"
+    label: "PID Controller"
+    critical: true
+  - name: "step_input"
+    label: "Step Input (identification)"
+    critical: false
+
+# Node PID (pour les commandes ros2 param set)
+pid_controller:
+  node_name: "ip_apriltag_debug"
+  enable_topic: "/ip_enable"
