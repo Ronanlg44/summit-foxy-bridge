@@ -1,267 +1,123 @@
-# **Conception et intégration** d’une solution de **téléopération inter-version** pour le **Robotnik Summit XL** (**ROS 1 Kinetic** ↔ **ROS 2 Foxy**) avec module de **vision embarquée** assistée par **IA**.
+# Déploiement embarqué (branche `rpi4`)
 
-Pont Docker qui relie le robot **Summit XL** (Robotnik, ROS Kinetic figé) à
-des nœuds **ROS 2 Foxy** sur le PC. Permet de lire les capteurs du robot
-depuis ROS 2 et de lui envoyer des commandes de vitesse. Une couche
-**vision** (RealSense D435i + AprilTag + YOLO + supervisor) tourne en
-parallèle pour le tracking visuel du Spot et la formulation des commandes
-de vitesse.
+Ce README couvre uniquement la partie embarquée : ce qui tourne sur la
+RPi4 attachée au Summit XL. La vue d'ensemble du projet est dans le
+`README.md` de la branche `main`.
 
-Rédigé par Ronan Le Guenne : ronan.le-guenne@polytech-lille.net
+## Contenu de la branche
 
----
-
-## Sommaire
-
-1. [Démarrage rapide](#démarrage-rapide)
-2. [Architecture](#architecture)
-3. [Prérequis](#prérequis)
-4. [Topics disponibles](#topics-disponibles)
-5. [Bridge sélectif (parameter_bridge)](#bridge-sélectif-parameter_bridge)
-6. [Pilotage au clavier (teleop)](#pilotage-au-clavier-teleop)
-7. [Vision (RealSense + AprilTag + YOLO + supervisor)](#vision-realsense--apriltag--yolo--supervisor)
-8. [Choix d'architecture (résumé du diagnostic)](#choix-darchitecture-résumé-du-diagnostic)
-9. [Dépannage](#dépannage)
-10. [Évolutions prévues](#évolutions-prévues)
-11. [Fichiers du projet](#fichiers-du-projet)
-
----
-
-## Démarrage rapide
-
-```bash
-# 1. PC sur WiFi du robot (SSID : SXL00181120AA, mdp : R0b0tn1K)
-ping -c 2 192.168.0.200           # doit repondre
-
-# 2. Pipeline complet (bridge + vision + supervisor)
-cd ~/Pro/Stage_CNRS/ROS/summit_foxy
-./launch_all.sh           # lance tout dans tmux dans le bon ordre
-./launch_all.sh attach    # voir les logs (Ctrl+B puis N/P pour naviguer)
-./launch_all.sh stop      # arrêter
-```
-
-Pour ne lancer que le pont (sans vision) :
-
-```bash
-docker compose run --rm bridge
-# Puis dans un autre terminal :
-docker compose run --rm shell
-ros2 topic list | grep summit_xl
-```
-
----
-
-## Architecture
-
-```
-+-----------------+         +-------------------------------+
-|   Summit XL HL  |  TCPROS |  Conteneur bridge             |
-|   Kinetic       |<------->|  Noetic + Foxy                |
-|   192.168.0.200 |         |  parameter_bridge sélectif    |
-+-----------------+         +---------------+---------------+
-                                            | DDS via wlo1
-                                            v
-                                +-----------+-----------+
-                                |  Conteneurs Foxy      |
-                                |  realsense, apriltag, |
-                                |  refiner, pose_fuser, |
-                                |  yolo, supervisor,    |
-                                |  shell, teleop, rviz  |
-                                +-----------------------+
-                                          PC (192.168.0.219)
-```
-
-Trois éléments clés :
-- Le robot reste **intouché** : on ne fait que lire son `roscore`.
-- Le bridge utilise **`parameter_bridge`** (sélectif via YAML), pas
-  `dynamic_bridge` (qui s'abonne à tous les topics ROS 2).
-- Tous les processus ROS 2 utilisent **CycloneDDS** et **`ROS_DOMAIN_ID=0`**,
-  avec une config commune via `cyclonedds.xml` (buffer réseau 64 MB).
-
----
+Sync du contenu réellement déployé sur la RPi4 (`~/summit-foxy-bridge/`)
+plus le dossier `summit_control_ui/` pour l'IHM lancée depuis le PC.
 
 ## Prérequis
 
-### Matériel et réseau
+- RPi4 8GB avec Ubuntu 20.04 + Docker installé.
+- RealSense D435i branchée en USB3.
+- RPi4 connectée au Wifi du Summit (SSID `SXL00181120AA`, sans
+  internet en fonctionnement).
+- Summit sous ROS 1 Noetic (natif), IP `192.168.0.200`.
+- PC de l'opérateur sur le même Wifi que la RPi4.
 
-- Summit XL HL allumé, accessible en `192.168.0.200`
-- PC sur le **point d'accès WiFi du robot** (SSID `SXL00181120AA`, mot de passe `R0b0tn1K`)
+## Réseau
 
-### Logiciel
+- Summit XL : `192.168.0.200`
+- RPi4 (`summit-pi`) : `192.168.0.50`
+- PC (opérateur) : DHCP sur le Wifi Summit
 
-- Docker 25+ et Docker Compose v2
-- Aucun ROS 2 natif requis sur l'hôte
+Fichier `env.rpi.example` : copier en `env.rpi` et adapter si besoin.
 
-### Tuning kernel UDP (à faire à chaque reboot du PC, ou persister)
+## Première installation
 
-```bash
-sudo sysctl -w net.core.rmem_max=2147483647
-sudo sysctl -w net.core.rmem_default=2147483647
-```
+1. Cloner la branche `rpi4` sur la RPi4 :
+   ```bash
+   git clone -b rpi4 <url_repo> ~/summit-foxy-bridge
+   ```
 
-### Vérifications session
+2. Construire l'image Docker embarquée (nécessite internet, prévoir
+   ~90 min sur RPi4) :
+   ```bash
+   cd ~/summit-foxy-bridge
+   docker build -f Dockerfile.rpi -t summit-rpi:latest .
+   ```
 
-```bash
-ip addr show wlo1 | grep "inet "    # doit montrer 192.168.0.219/24
-ping -c 2 192.168.0.200              # doit répondre
+3. Copier les configs :
+   ```bash
+   cp env.rpi.example env.rpi
+   ```
 
-# Pour les outils graphiques (RViz, rqt) — une fois par session
-xhost +local:docker
-```
+4. Vérifier que `pid_params.yaml` existe (sinon les gains PID
+   utiliseront les valeurs par défaut du code) :
+   ```bash
+   ls control/pid_apriltag/pid_params.yaml
+   ```
 
----
+## Lancement d'une mission
 
-## Topics disponibles
-
-Topics ROS 1 pontés vers ROS 2 :
-
-| Topic ROS 2                                  | Type                    | Sens       |
-|----------------------------------------------|-------------------------|------------|
-| `/summit_xl/front_laser/scan`                | `sensor_msgs/LaserScan` | robot → PC |
-| `/tf`, `/tf_static`                          | `tf2_msgs/TFMessage`    | robot → PC |
-| `/summit_xl/robotnik_base_control/cmd_vel`   | `geometry_msgs/Twist`   | PC → robot |
-
-Topics ROS 2 publiés par la couche vision : voir [`vision/README.md`](vision/README.md#topics-principaux).
-
----
-
-## Bridge sélectif (parameter_bridge)
-
-Migration de `dynamic_bridge` (qui pontait tous les topics ROS 2 vers ROS 1)
-vers `parameter_bridge` (sélectif par YAML).
-
-Configuration dans `bridge/topics.yaml` :
-
-```yaml
-topics:
-  - { topic: /summit_xl/front_laser/scan, type: sensor_msgs/msg/LaserScan, queue_size: 10 }
-  - { topic: /tf,        type: tf2_msgs/msg/TFMessage, queue_size: 100 }
-  - { topic: /tf_static, type: tf2_msgs/msg/TFMessage, queue_size: 100 }
-  - { topic: /summit_xl/robotnik_base_control/cmd_vel, type: geometry_msgs/msg/Twist, queue_size: 10 }
-
-services_1_to_2: []
-services_2_to_1: []
-```
-
-Les paramètres sont chargés par `entrypoint.sh` via `rosparam load` à la
-racine du master ROS 1, puis lus par `parameter_bridge` via XmlRpc.
-
-Pour ajouter un topic : éditer le YAML et relancer le service `bridge`.
-
-**Note** : le bridge publie `/tf_static` en DURABILITY_VOLATILE, incompatible
-avec les subscribers tf2 standard qui attendent TRANSIENT_LOCAL. Les TF
-critiques du robot (notamment `summit_xl_front_laser_link`) sont donc
-publiées localement par le service `tf_static` du projet vision. Voir
-[`vision/README.md`](vision/README.md#goulot-détranglement-dds-et-contournements).
-
----
-
-## Pilotage au clavier (teleop)
-
-### Sécurité
-
-- Robot **surélevé** (roues dans le vide) pour les premiers tests
-- Bouton d'arrêt d'urgence à portée
-- Désarmer l'arrêt d'urgence (tirer) seulement quand prêt
-
-### Lancement
+Depuis le PC via l'IHM (voir `summit_control_ui/README.md`), ou
+directement sur la RPi4 :
 
 ```bash
-docker compose run --rm teleop
+cd ~/summit-foxy-bridge
+./launch_all.rpi.sh mission
 ```
 
-Touches : `i` avant, `,` arrière, `j`/`l` rotation, `k` stop, `q`/`z`
-vitesse max ±10%. **Taper plusieurs `z` au démarrage** pour réduire la
-vitesse à ~0.1 m/s avant tout essai.
+Le script démarre une session tmux avec :
+- `realsense` — flux caméra + depth
+- `tf_static` — TF caméra + LiDAR
+- `bridge` — pont ROS1 ↔ ROS2 (dynamic_bridge)
+- `apriltag` — détection AprilTag 36h11
+- `refiner` — raffinement depth
+- `pose_fuser` — fusion multi-tags ancrée sur Tag 0
+- `pid_apriltag` — PID + WebSocket serveur
 
-L'à-coup au démarrage vient de l'absence de rampe d'accélération dans
-`teleop_twist_keyboard`. Voir [Évolutions](#évolutions-prévues).
+Arrêt propre :
 
----
-
-## Vision (RealSense + AprilTag + YOLO + supervisor)
-
-Pipeline complet documenté dans [`vision/README.md`](vision/README.md) :
-
-- **Driver D435i** (RGB + depth + IR) sur USB 3.0 direct au PC
-- **AprilTag** (RGB ou IR) avec raffinement pose via depth (médiane 5×5)
-- **Calibration extrinsèque** D435i et LiDAR sur Summit + 3 tags sur Spot
-- **Pose Spot** via chaînage TF et fusion multi-tags
-- **YOLO** (YOLOv8m ONNX + ByteTrack) comme repli quand tags non visibles,
-  activé à la demande par le supervisor pour économiser le CPU
-- **Supervisor** : machine d'états TAG_OK / YOLO_TRACKING / LOST avec
-  fusion YOLO bearing + LiDAR distance
-
-Particularités du pipeline final :
-- Subscribers cam en mode **JPEG** (`/camera/color/image_raw/compressed`)
-  pour contourner le goulot multi-subscribers Cyclone DDS Foxy
-- YOLO **lazy + décimé** à 5 Hz quand actif, désactivé quand TAG_OK
-- Plusieurs **patches QoS** appliqués (apriltag BEST_EFFORT, cyclonedds.xml,
-  buffer kernel UDP). Détails et chronologie dans [`vision/README.md`](vision/README.md#goulot-détranglement-dds-et-contournements).
-
-Sortie unifiée : `/spot_target_pose` + `/perception_status`.
-
----
-
-## Choix d'architecture (résumé du diagnostic)
-
-### Autres pistes écartées
-
-- **`ros1_bridge` Kinetic ↔ Humble** : Humble n'a pas de paquets ROS 1
-  en apt sur Ubuntu 22.04, conflits Python (3.8 vs 3.10) à la compilation
-  
-- **Zenoh** : bug de handshake TCPROS non corrigé côté ROS 1 Kinetic
-
-- **Migration robot vers ROS 2** : plusieurs semaines, risque élevé sur
-  robot de labo partagé
-
-## Évolutions prévues
-
-- **PID d'asservissement** linéaire/angulaire sur `/spot_target_pose`,
-  avec adaptation selon `/perception_status`
-- **Validation RJ45 + RPi4 embarqué** : passage en Ethernet pour éliminer
-  les pertes WiFi et stabiliser DDS
-- **Rampe d'accélération** sur les `cmd_vel` (`nav2_velocity_smoother`
-  ou nœud custom) pour éliminer les à-coups teleop
-- **Nav2 + AMCL** pour la navigation autonome
-- **Évolutions vision** : voir [`vision/README.md`](vision/README.md#évolutions-prévues)
-
----
-
-## Fichiers du projet
-
-```
-summit_foxy/
-├── Dockerfile             # Image Noetic + Foxy + ros1_bridge + CycloneDDS + vision
-├── docker-compose.yml     # Tous les services (CYCLONEDDS_URI partagé)
-├── entrypoint.sh          # Lancement bridge avec attente master ROS 1
-├── launch_all.sh          # Orchestration tmux de la chaîne complète
-├── cyclonedds.xml         # Config DDS partagée (buffer 64 MB)
-├── env.example            # ROBOT_IP, MY_IP, DOMAIN_ID
-├── README.md              # Ce fichier
-├── bridge/
-│   └── topics.yaml        # Configuration parameter_bridge
-├── vision/
-│   ├── README.md          # Doc vision détaillée
-│   ├── refiner/           # apriltag_refiner + pose_fuser
-│   ├── apriltag/          # config tags YAML
-│   ├── calibration/       # tf_static_launch.py
-│   ├── supervisor/        # perception_supervisor
-│   └── yolo/              # yolo_detector + modèle ONNX
-└── rviz_configs/
-    ├── realsense_d435i.rviz
-    ├── apriltag_d435i.rviz
-    ├── apriltag_ir_d435i.rviz
-    └── SPOT_TRACKING.rviz
+```bash
+./launch_all.rpi.sh stop
 ```
 
----
+## Sécurités
 
-## Crédits
+- **Anti-collision LiDAR** intégrée au node PID : freinage progressif
+  entre 0.8 m et 0.4 m devant, arrêt en dessous.
+- **`publish_real_cmd`** par défaut à `false` dans `pid_params.yaml` :
+  au démarrage, aucune commande n'est envoyée au vrai robot. Il faut
+  activer explicitement le mode réel via l'IHM.
+- **`pose_timeout`** de 0.5 s : freinage automatique si les
+  détections AprilTag se perdent.
 
-Diagnostic et mise au point : Ronan Le Guenne, mai-juin 2026.
+## Réglage à chaud
 
-Pont basé sur `ros1_bridge` (OSRF), CycloneDDS (Eclipse),
-`teleop_twist_keyboard` (ROS community), `realsense2_camera` (Intel),
-`apriltag` + `apriltag_ros` (AprilRobotics + Adlink-ROS),
-YOLOv8 (Ultralytics) + ByteTrack via `supervision` (Roboflow).
+Les paramètres PID sont modifiables en direct via l'IHM (bouton
+"SAUVEGARDER" écrit dans `pid_params.yaml`, chargé au prochain
+démarrage du conteneur).
+
+## Débogage rapide
+
+État des conteneurs :
+```bash
+docker ps
+```
+
+Logs d'un conteneur :
+```bash
+docker logs -f $(docker ps --filter "name=pid_apriltag" -q)
+```
+
+Vérifier les topics ROS 2 :
+```bash
+docker compose -f docker-compose.rpi.yml run --rm shell
+ros2 topic list
+```
+
+Vérifier la fréquence de la pose fusionnée :
+```bash
+ros2 topic hz /spot_pose_in_summit
+```
+
+## Notes
+
+- La RPi4 n'a pas d'internet en Wifi Summit : toute modif de l'image
+  Docker nécessite de repasser en Ethernet partagé depuis le PC.
+- Charge CPU en régime normal : environ 5/8. Température CPU à
+  surveiller au-delà de 70 °C.
